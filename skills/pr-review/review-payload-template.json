@@ -1,0 +1,13 @@
+{
+  "commit_id": "<headRefOid from `gh pr view`>",
+  "event": "REQUEST_CHANGES",
+  "body": "",
+  "comments": [
+    {
+      "path": "app/example/file.rb",
+      "line": 13,
+      "side": "RIGHT",
+      "body": "@<author>\n\n🔴 **<Short title>**\n\n**What:** <the problem, quoting the offending expression>\n**Why it happens:** <root cause>\n**What it can cause:** <concrete impact>\n**How to fix:**\n```ruby\n<fix snippet>\n```\n**Alternatives:** <other valid approaches or \"none needed\">"
+    }
+  ]
+}
