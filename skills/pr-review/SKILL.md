@@ -60,13 +60,13 @@ Use the `superpowers:dispatching-parallel-agents` skill. **Default: 10 agents**,
 | 10 | Linter, style & repo rules |
 
 Each agent prompt must:
-- Tell it to invoke `code-review-excellence` first.
+- Tell it to invoke `code-review-expert` first.
 - Give it the **one** angle + concrete files to inspect.
 - Tell it to read the diff itself (`git diff origin/<base>...HEAD`).
 - Demand a fixed output: `## 🚫 Blocking` and `## 💡 Nitpicking`, each bullet as **Title — file:line — impact — fix**, with a confidence score **and a short evidence quote of the offending code** (so findings can be verified in step 3).
 - Tell it: only report what you can point to in the code; do not speculate or invent issues. "If no blockers, say so explicitly."
 
-Use `feature-dev:code-reviewer` as the agent type when available.
+The review method comes from `code-review-expert`, so no external reviewer agent is required — any capable agent type works.
 
 ### 3. Verify & weigh each finding (ALWAYS — guards against hallucinated reviews)
 Parallel agents will sometimes invent issues, misread the diff, cite the wrong line, flag intended behavior, or contradict each other. Before anything is consolidated, **contrast every finding against the actual code** and assign a verdict. Do not take an agent's word for it.
