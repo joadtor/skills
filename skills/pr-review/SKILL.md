@@ -63,8 +63,7 @@ Each agent prompt must:
 - Tell it to invoke `code-review-expert` first.
 - Give it the **one** angle + concrete files to inspect.
 - Tell it to read the diff itself (`git diff origin/<base>...HEAD`).
-- Demand a fixed output: `## 🚫 Blocking` and `## 💡 Nitpicking`, each bullet as **Title — file:line — impact — fix**, with a confidence score **and a short evidence quote of the offending code** (so findings can be verified in step 3).
-- Tell it: only report what you can point to in the code; do not speculate or invent issues. "If no blockers, say so explicitly."
+- Demand its findings follow `code-review-expert`'s output format — the three severity sections, each finding carrying its confidence score and an evidence quote of the offending code — so step 3 can verify them.
 
 The review method comes from `code-review-expert`, so no external reviewer agent is required — any capable agent type works.
 
