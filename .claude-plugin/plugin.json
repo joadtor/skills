@@ -1,0 +1,8 @@
+{
+  "name": "skills",
+  "version": "0.1.0",
+  "description": "Personal collection of agent skills authored to the Agent Skills open standard.",
+  "author": {
+    "name": "Jose Luis Adelantado Torres"
+  }
+}

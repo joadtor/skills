@@ -1,0 +1,13 @@
+{
+  "name": "skills",
+  "owner": {
+    "name": "Jose Luis Adelantado Torres"
+  },
+  "plugins": [
+    {
+      "name": "skills",
+      "source": "./",
+      "description": "Personal collection of agent skills authored to the Agent Skills open standard."
+    }
+  ]
+}
