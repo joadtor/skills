@@ -37,8 +37,10 @@ Do NOT use for: internal code reviews, commit messages, or technical deep-dives 
 
 ## Format
 
+If the PR body already follows a format (an existing template or an established section structure), match that format. Otherwise, default to a `## Changes` section:
+
 ```markdown
-**Changes**
+## Changes
 - <feature or capability, user-facing>
 - <setting or toggle, in plain language>
 - <behavior or reuse, described by effect>
