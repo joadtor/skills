@@ -59,6 +59,12 @@ Dispatch all agents in a **single message** — multiple Agent calls in one resp
 | 9 | i18n / message completeness |
 | 10 | Linter, style & repo rules |
 
+A good review-agent prompt is:
+
+1. **Focused** — one angle, nothing else.
+2. **Self-contained** — all the context to review it without your session.
+3. **Specific about output** — `code-review-expert`'s format, so step 3 can verify every finding.
+
 Give each agent a prompt from this sample — fill `<angle>` from the table above (one distinct angle per agent), plus `<base>` and `<files>`:
 
 ```text
@@ -72,6 +78,17 @@ Invoke the `code-review-expert` skill, then review this PR through ONE lens only
 - Report in `code-review-expert`'s output format: the three severity sections, every finding
   with a confidence score and an evidence quote of the offending code. Report only what you
   can point to in the code. If your angle is clean, say so.
+```
+
+Filled in for angle #1, the prompt an agent actually receives:
+
+```text
+Invoke the `code-review-expert` skill, then review this PR through ONE lens only: Security, authorization & multi-tenancy isolation.
+
+- Stay strictly within this angle. The other agents cover the other angles, so don't review their points — overlap just produces duplicate findings.
+- Scope: run `git diff origin/develop...HEAD` and read it yourself. Flag only what this diff introduces or touches — never pre-existing issues.
+- Focus files: app/controllers/api/orders_controller.rb, app/services/order_service.rb.
+- Report in `code-review-expert`'s output format: the three severity sections, every finding with a confidence score and an evidence quote of the offending code. Report only what you can point to in the code. If your angle is clean, say so.
 ```
 
 The review method comes from `code-review-expert`, so no external reviewer agent is required — any capable agent type works.
