@@ -44,7 +44,7 @@ git diff origin/<base>...HEAD       # full diff for context
 Use `...` (merge-base) so you only see what the PR adds, not base drift.
 
 ### 2. Fan out review agents (parallel, one message, multiple Agent calls)
-Use the `superpowers:dispatching-parallel-agents` skill. **Default: 10 agents**, each assigned **one distinct angle** so they don't overlap:
+Dispatch all agents in a **single message** — multiple Agent calls in one response run in parallel; one per response runs sequentially. **Default: 10 agents**, each assigned **one distinct angle** so they don't overlap:
 
 | # | Angle |
 |---|-------|
