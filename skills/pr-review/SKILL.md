@@ -59,11 +59,20 @@ Dispatch all agents in a **single message** — multiple Agent calls in one resp
 | 9 | i18n / message completeness |
 | 10 | Linter, style & repo rules |
 
-Each agent prompt must:
-- Tell it to invoke `code-review-expert` first.
-- Give it the **one** angle + concrete files to inspect.
-- Tell it to read the diff itself (`git diff origin/<base>...HEAD`).
-- Demand its findings follow `code-review-expert`'s output format — the three severity sections, each finding carrying its confidence score and an evidence quote of the offending code — so step 3 can verify them.
+Give each agent a prompt from this sample — fill `<angle>` from the table above (one distinct angle per agent), plus `<base>` and `<files>`:
+
+```text
+Invoke the `code-review-expert` skill, then review this PR through ONE lens only: <angle>.
+
+- Stay strictly within this angle. The other agents cover the other angles, so don't review
+  their points — overlap just produces duplicate findings.
+- Scope: run `git diff origin/<base>...HEAD` and read it yourself. Flag only what this diff
+  introduces or touches — never pre-existing issues.
+- Focus files: <files>.
+- Report in `code-review-expert`'s output format: the three severity sections, every finding
+  with a confidence score and an evidence quote of the offending code. Report only what you
+  can point to in the code. If your angle is clean, say so.
+```
 
 The review method comes from `code-review-expert`, so no external reviewer agent is required — any capable agent type works.
 
