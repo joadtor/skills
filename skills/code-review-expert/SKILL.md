@@ -1,6 +1,6 @@
 ---
 name: code-review-expert
-description: Use when reviewing a diff, branch, or pull request for real bugs, security, performance, or quality problems. The confidence-gated, plain-word base reviewer behind pr-review.
+description: Use when reviewing a diff or branch for real bugs, security, performance, or quality problems — solo, or as the per-angle engine pr-review fans out. Confidence-gated, plain-word review. (For a whole PR with fan-out and publishing, use pr-review.)
 ---
 
 # Code Review Expert
@@ -13,7 +13,7 @@ Review a change the way an expert does: check every dimension, but report **only
 
 ## When to Use
 
-- Reviewing a diff, branch, or pull request
+- Reviewing a diff or branch (or one angle of a larger review)
 - Solo, or as the per-angle reviewer that `pr-review` fans out
 - You want findings you can act on, not a wall of maybes
 
@@ -21,12 +21,14 @@ When NOT to use: a trivial one-line diff (just read it), or non-code content.
 
 ## Scope — what to review
 
-Default to the branch delta against its base. Detect the base branch in this order, first that exists on the remote: **`develop` → `master` → `main`**. A branch the user names overrides this.
+Default to the branch delta against its base. Detect the base branch in this order, first that exists on the remote: **`develop` → `master` → `main`**. A branch the user names overrides this; if none of the three exists, ask the user (or fall back to the remote's default branch).
 
 ```bash
 base=$(for b in develop master main; do
   git rev-parse --verify --quiet "origin/$b" >/dev/null && echo "$b" && break
 done)
+# none of the three on the remote? fall back to the remote's default branch
+[ -z "$base" ] && base=$(git remote show origin | sed -n 's/.*HEAD branch: //p')
 git diff "origin/$base...HEAD"        # three dots: only what this branch adds
 ```
 

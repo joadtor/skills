@@ -1,6 +1,6 @@
 ---
 name: plan-draft
-description: Use when a settled design and its Gherkin spec should be turned into a concrete story-map execution plan (a docs/plans .md file) — a task-execution map plus detailed, test-first tasks (splittable into steps) that each trace back to a scenario.
+description: Use when a design (with its Gherkin spec — or a bare idea to work up first) should become a concrete story-map execution plan (a docs/plans .md file) — a task-execution map plus detailed, test-first tasks (splittable into steps) that each trace back to a scenario.
 ---
 
 # Plan Draft
@@ -9,13 +9,13 @@ description: Use when a settled design and its Gherkin spec should be turned int
 
 Turn a settled design and its spec into one execution plan: a **task-execution map** (a story-map grid) plus a single list of **detailed, test-first task specifications**, each tracing back to a scenario in the spec. A large task splits into ordered **steps**. The spec's scenarios are failing acceptance tests; the plan is the concrete, ordered work that turns them green.
 
-**Core principle:** Every scenario is covered by a task, every task traces to a scenario, and each task (or step) is concrete enough to build from — real file paths, real snippets — with a Definition of Done that says "make its scenario pass," test first.
+**Core principle:** Turn each spec scenario green with the simplest task that traces to it — concrete enough to build from (real file paths, real snippets), its Definition of Done being "make its scenario pass," test first.
 
 ## Principles
 
 - **Iron law — two-way traceability.** No plan ships unless *every* scenario is covered by at least one task **and** every task traces to at least one scenario. "Traces to" means *needed to make it pass*, so enabling/infra tasks are fine — they trace to the scenario they unblock. No orphan tasks, no uncovered scenarios.
-- **YAGNI.** Cut tasks no scenario needs. Split a task into steps only when it's big enough to warrant it — don't decompose a one-liner.
-- **KISS.** State each fact once — the plan must never contradict itself, and its layout must never encode an order you don't want.
+- **YAGNI.** Cut tasks no scenario needs. Split a task into steps only when it spans more than one file or needs more than one `done when:` check — don't decompose a one-liner.
+- **KISS.** State each fact once — the plan must never contradict itself, and the map's row order must not imply a sequence you didn't intend.
 
 ## Prerequisite: a spec
 
@@ -26,14 +26,18 @@ Turn a settled design and its spec into one execution plan: a **task-execution m
 
 So calling this skill cold takes an idea all the way to a plan — spec first, plan second.
 
+## When NOT to use
+
+A change small enough to hold in your head — one file, a lone task, no sequencing — doesn't need a story-map. Draft the task inline or just build it.
+
 ## The discipline (RED → GREEN → REFACTOR)
 
 Author the plan the way you'd write code test-first:
 
 1. **RED** — read the spec. Each `Scenario` is a currently-failing acceptance test. The plan's whole job is to turn them green.
-2. **GREEN** — for each scenario, add the task(s) that turn it green. A task's **Definition of Done is the scenario(s) it makes pass**; a large task splits into ordered **steps**, each with its own *done-when* check. Steps are test-first: the failing check comes before the code that satisfies it.
+2. **GREEN** — for each scenario, add the task(s) that turn it green. A task's **Definition of Done is the scenario(s) it makes pass** — or, for an enabling task, the scenario it *unblocks*. A large task splits into ordered **steps**, each with its own `done when:` check. Steps are test-first: the failing check comes before the code that satisfies it.
 3. **REFACTOR** — collapse the map to the *simplest* sequence that still covers every scenario. Merge overlaps, order by real dependencies, drop speculative tasks (YAGNI/KISS).
-4. **Verify** — before presenting, walk it both ways: every scenario appears in some task's DoD, and every task names at least one scenario. Loop until the iron law holds.
+4. **Verify** — before presenting, walk it both ways: every scenario appears in some task's DoD, and every task names at least one scenario (the one it makes pass, or unblocks). Loop until the iron law holds.
 
 ## Output
 
@@ -44,7 +48,7 @@ Write to `docs/plans/YYYY-MM-DD-<topic>.md` (create `docs/plans/` if it doesn't 
 Three sections:
 
 - **§1 Context** — goal / why, the spec path, design links, the must-not-break constraints.
-- **§2 Task Execution Map** — the grid. **Rows** are the execution sequence; *name* each phase (Foundation, Core Data, Integration…). **Columns** are the technical domains *this* work spans — derive them (`Database | API | UI` suits a web feature; a CLI or pipeline has others). Each cell is a task id + short title.
+- **§2 Task Execution Map** — the grid. **Rows** are the execution sequence; *name* each phase (Foundation, Core Data, Integration…). **Columns** are the technical domains *this* work spans — derive them (`Database | API | UI` suits a web feature; a CLI or pipeline has others). Each cell is a task id + short title. Phases are a reading aid — the authoritative order is each task's `Depends on` / `Blocks`.
 - **§3 Task Specifications** — one entry per task, and the **single source of status** (`[ ]` on each heading and each step — no second checklist). See the anatomy below.
 
 ### Task anatomy
@@ -59,7 +63,7 @@ Three sections:
     <snippet the step introduces>
     *done when:* <check>
 - **Technical Notes:** cross-cutting detail no single step owns _(optional)_
-- **DoD:** the `Scenario:`(s) this task turns green.
+- **DoD:** the `Scenario:`(s) this task turns green (or, for an enabling task, the one it unblocks).
 ```
 
 - **Step ids are dotted** (`T5.1`, `T5.2`) so the map cell (`T5`), the task, and its steps cross-reference and the order is explicit.
@@ -95,8 +99,8 @@ Three sections:
 - **Description:** Backend route that processes a cart for an unauthenticated buyer.
 - **Steps:**
   - [ ] **T5.1** Add route + stub handler — `routes`, `controllers/checkout#guest` — *done when:* a request test reaches the handler (red for the behavior).
-  - [ ] **T5.2** Validate payload; reject missing/invalid `email` with `400` — *done when:* `Scenario: Missing email in guest checkout` passes.
-  - [ ] **T5.3** Create order + charge in ONE transaction:
+  - [ ] **T5.2** Validate payload; reject missing/invalid `email` with `400` — `controllers/checkout#guest` — *done when:* `Scenario: Missing email in guest checkout` passes.
+  - [ ] **T5.3** Create order + charge in ONE transaction — `controllers/checkout#guest`:
     ```
     begin transaction
       order  = create Order(user_id: null, ...attrs)
@@ -108,22 +112,12 @@ Three sections:
 - **DoD:** `Scenario: Successful guest checkout` and `Scenario: Missing email in guest checkout` both green.
 ````
 
-The pseudocode and generic paths are only because this skill is stack-agnostic — in a real plan, use the project's actual language, files, and identifiers.
-
-## Rules
-
-- Reference the spec by path; don't embed it.
-- Be concrete: every task (or step) names the real files it touches and shows the snippet or schema that matters. No "implement the endpoint" hand-waving.
-- Split a task into steps only when it earns it; each step names its file(s) and a `done when:` check.
-- Every task heading carries an id (`T1`), each step a dotted id (`T1.1`), so the map, tasks, and steps cross-reference and dependencies (`Depends on` / `Blocks`) read cleanly.
-- Plan only the work the spec settled — don't invent scope the scenarios don't ask for.
-
 ## Common Mistakes
 
 - Vague tasks — no file paths, no snippets → un-buildable; name real files and show the code that matters.
 - Splitting a trivial task into steps → over-decomposition; steps are for tasks big enough to need them.
 - A second checklist duplicating the map → one list drifts and the plan contradicts itself; keep §3 as the only task/status list.
-- A trailing "QA / Verification" column or phase → encodes test-*after*; put the check in each task/step's `done when`.
+- A trailing "QA / Verification" column or phase → encodes test-*after*; put the check in each task/step's `done when:` slot.
 - Orphan tasks or uncovered scenarios → breaks the iron law; every task ↔ at least one scenario, both ways.
 - Hardcoding `Database | API | UI` columns → lies about non-web work; derive the domains from the work.
 - Embedding the spec instead of linking it → the plan and spec drift; reference by path.

@@ -24,7 +24,7 @@ Do NOT use for: internal code reviews, commit messages, or technical deep-dives 
 3. **Product language, not mechanism.** Say what the feature does, not how it was built.
 4. **3–6 bullets max.** One sentence each.
 5. **Group tests into one line** ("Added tests covering the new behavior").
-6. **Lead each bullet with a verb** describing user-visible behavior (Added / Enabled / Routed / Reused).
+6. **Lead each bullet with a verb** describing user-visible behavior (Added / Enabled / Routed / Reused). `Reused`/`Routed` are fine when they name a user-visible thing — a screen, a flow — not a code construct: "Reused the QR scan screen," never "Reused the base component."
 
 ## Quick Reference
 

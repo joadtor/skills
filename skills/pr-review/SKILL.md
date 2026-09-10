@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Use when asked to review a pull request (especially "open N agents", "review the PR against <branch>", split findings into blocking vs nitpicking, score severity, or post the review as GitHub inline comments / request changes). Covers fan-out multi-agent review and publishing the result via the gh API.
+description: Use when asked to review a pull request (especially "open N agents", "review the PR against a base branch", split findings into blocking vs nitpicking, score severity, or post the review as GitHub inline comments / request changes). Covers fan-out multi-agent review and publishing the result via the gh API.
 ---
 
 # Parallel PR Review & Publish
@@ -59,6 +59,8 @@ Dispatch all agents in a **single message** — multiple Agent calls in one resp
 | 9 | i18n / message completeness |
 | 10 | Linter, style & repo rules |
 
+These 10 are a web-app default. For a non-web PR, derive the angles from the actual stack — drop the ones that don't apply (i18n, routing, N+1, service-layer) and add what does.
+
 A good review-agent prompt is:
 
 1. **Focused** — one angle, nothing else.
@@ -108,7 +110,7 @@ For anything non-obvious or high-impact (security, data loss, a claimed day-0 bu
 Output of this step: a deduped list of findings, each tagged **confirmed / uncertain / discarded** with a one-line evidence note (the code you saw). Only **confirmed** (and explicitly-flagged uncertain) findings move on.
 
 ### 4. Consolidate
-Merge the confirmed findings, dedupe overlaps, attribute briefly. Present as Blocking vs Nitpicking.
+Merge the confirmed findings, dedupe overlaps, attribute briefly. Present as Blocking vs Nitpicking — mapping `code-review-expert`'s three tiers onto the two buckets: 🔴 blocking and 🟡 important → **Blocking**; 🟢 nit → **Nitpicking**.
 
 ### 5. Severity-score & filter (ALWAYS — not optional)
 Score each issue 0 (style nit) → 10 (day-0 bug). **Drop anything below 4** (the agreed default threshold). Map each surviving issue to the **exact file:line where the inline comment should land** — confirm line numbers by Reading the real files (diff line ≠ file line). Present the scored, filtered report to the user.
@@ -141,7 +143,7 @@ Each comment object: `path`, `line`, `side: "RIGHT"`, `body`.
 - **Diff against the PR's real base.** `gh pr view --json baseRefName` — feature PRs sometimes target another feature branch, not develop/master. Findings and anchors must come from `origin/<baseRefName>...HEAD`, or you'll flag (and anchor on) code that isn't in the PR.
 - **Confirm line numbers against the real file** with Read before posting — agents report approximate lines.
 - **Multiple comments can target the same line** (e.g. two issues on one line) — just add two objects.
-- **Lead format:** `@author` mention first, then a severity dot (🔴/🟠/🟡/🟢), then the finding. No numeric scores. Prefix lower-severity items with `[nitpicking]` if requested.
+- **Lead format:** `@author` mention first, then a severity dot (🔴/🟡/🟢), then the finding. No numeric scores. Prefix lower-severity items with `[nitpicking]` if requested.
 - **Each comment should explain:** what / why it happens / what it can cause / how to fix / alternatives. Keep that structure consistent.
 - Verify success: response JSON has `"state": "CHANGES_REQUESTED"` (or `COMMENTED`).
 
