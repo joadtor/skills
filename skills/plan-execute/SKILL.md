@@ -13,9 +13,9 @@ Build a settled `plan-draft` plan: read it, run its tasks — fanning independen
 
 ## Prerequisites
 
-- **A plan.** Normally a `plan-draft` file (`docs/plans/…md`) with a task map, per-task file lists, `Depends on`/`Blocks`, and `DoD = Scenario`. Read the linked spec too — it is the binding authority; conflicts inside the plan resolve against it.
+- **A plan *and* its spec.** Normally a `plan-draft` file (`docs/plans/…md`) with a task map, per-task file lists, `Depends on`/`Blocks`, and `DoD = Scenario`. **Read the linked `.feature` spec too** — it is the binding authority (conflicts inside the plan resolve against it), and its **scenarios are the acceptance tests you build**. Execution uses both files throughout: the plan for the graph and files, the spec for the tests.
 - **No plan, only a spec + context?** Stop and confirm with the user before going further — offer to run `plan-draft` first to get a real plan. Never execute plan-less silently.
-- **Branch.** Never start on `main`/`master` without explicit consent — branch first.
+- **Branch.** The plan's Context names the **target branch** — check it out (create it if needed) and work there. It must be a feature branch, never a shared one (`main`/`master`/`develop`); if the plan names a shared branch or none, confirm with the user and branch first.
 
 ## When NOT to use
 
@@ -54,6 +54,7 @@ Never hand it the whole plan or your session history — construct exactly what 
 
 Rules the dispatch carries:
 
+- **Build the tests from the spec.** A task's acceptance test comes straight from its `.feature` scenario — the Gherkin Given/When/Then *is* the test's arrange/act/assert. Don't invent acceptance criteria the spec didn't state.
 - **Stay within the declared files.** Need to touch a file outside the set? **Stop and report** — do not write. A surprise overlap breaks the disjoint-files guarantee the whole wave rests on.
 - **No nested subagents** — the implementer never spawns its own helpers or reviewer.
 - **Return** a short status (`done` / `blocked` / `needs-context`), the test + lint evidence, the files touched, and any concerns.
@@ -63,11 +64,11 @@ Rules the dispatch carries:
 
 Execute **continuously** — wave after wave, no pausing to ask "should I continue?". Decide small ambiguities yourself and log them.
 
-**Stop and ask only for:** a task at the 2-round cap; an irreversible or destructive operation; a push, publish, or merge to a shared branch; a plan so broken every path is a guess (plus the upfront no-plan and on-default-branch gates).
+**Stop and ask only for:** a task at the 2-round cap; an irreversible or destructive operation; a push, publish, or merge to a shared branch; a plan so broken every path is a guess (plus the upfront no-plan and shared-branch gates).
 
 ### Progress file
 
-Keep a git-ignored progress file (path derived from the plan; the first line names the plan, so a resumed session matches it to this plan). Record, per **task and step**: status, the DoD/test/lint evidence, the commit hash, fix-round outcomes, decisions you made, and which tasks ran together in a wave. Mirror completion into the plan's own `[ ]`→`[x]` checkboxes. On resume: match the plan, skip what's done, continue — the progress file and `git log` outrank your memory after compaction.
+Keep a progress file at `.skills/plans/<plan-title>/progress.md`. On first use, ensure `.skills/` is ignored **globally** so it never lands in a repo — append it to the global gitignore (`git config --global core.excludesfile`; create and point one if it's unset). Its first line names the plan, so a resumed session matches it to this plan. Record, per **task and step**: status, the DoD/test/lint evidence, the commit hash, fix-round outcomes, decisions you made, and which tasks ran together in a wave. Mirror completion into the plan's own `[ ]`→`[x]` checkboxes. On resume: match the plan, skip what's done, continue — the progress file and `git log` outrank your memory after compaction.
 
 ## Finish
 

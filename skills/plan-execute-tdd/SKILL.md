@@ -36,7 +36,7 @@ Per behavior, not just per task:
 Repeat until the task's DoD scenario is green.
 
 - **Test-after is forbidden.** Code written before its test is **deleted and redone** — not kept "as reference," not "adapted."
-- The DoD scenario is the acceptance target; the unit tests are the steps that reach it.
+- The task's `.feature` scenario is the acceptance target and the final test; the unit tests are the test-first steps that reach it. Build the RED tests from the spec's Given/When/Then — don't invent criteria it didn't state.
 
 ## The evidence contract (stricter than base)
 
