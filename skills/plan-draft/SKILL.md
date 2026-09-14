@@ -47,7 +47,7 @@ Write to `docs/plans/YYYY-MM-DD-<topic>.md` (create `docs/plans/` if it doesn't 
 
 Three sections:
 
-- **§1 Context** — goal / why, the spec path, the **target branch** (a feature branch to build on — *ask the user*; it isn't in the spec, and it must never be a shared branch like `main`/`master`/`develop`), design links, the must-not-break constraints.
+- **§1 Context** — goal / why, the spec path, the **target branch** (a feature branch to build on — *ask the user*; it isn't in the spec, and it must never be a shared branch like `main`/`master`/`develop`), design links, the must-not-break constraints, and the **boundaries** — which modules or layers this work may and may not depend on — whenever the project states an architecture or runs a dependency checker. `plan-execute` gates on them.
 - **§2 Task Execution Map** — the grid. **Rows** are the execution sequence; *name* each phase (Foundation, Core Data, Integration…). **Columns** are the technical domains *this* work spans — derive them (`Database | API | UI` suits a web feature; a CLI or pipeline has others). Each cell is a task id + short title. Phases are a reading aid — the authoritative order is each task's `Depends on` / `Blocks`.
 - **§3 Task Specifications** — one entry per task, and the **single source of status** (`[ ]` on each heading and each step — no second checklist). See the anatomy below.
 
@@ -80,6 +80,7 @@ Three sections:
 - **Spec:** docs/specs/2026-09-10-guest-checkout.feature
 - **Branch:** feature/guest-checkout
 - **Constraint:** Must not break existing authenticated sessions.
+- **Boundaries:** checkout talks to payments through `PaymentGateway` only — never to payment internals.
 
 ## 2. Task Execution Map
 | Sequence       | Database / State        | API / Core Logic           | UI / Frontend            |

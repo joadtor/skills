@@ -74,7 +74,7 @@ Tech-agnostic — the same patterns repeat across languages:
 - **Performance** — N+1 queries, needless loops, heavy work in a hot path
 - **Tests** — is the new behavior covered? do the tests check behavior, not internals?
 - **Conventions** — does it match the project's stated rules and the surrounding patterns?
-- **Maintainability** — clear names, functions doing one thing, no dead code
+- **Maintainability** — clear names, functions doing one thing (past cyclomatic complexity 8 they rarely do), no dead code
 
 ## Writing findings
 

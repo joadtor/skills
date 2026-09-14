@@ -30,8 +30,8 @@ Per behavior, not just per task:
 
 1. **RED** — write one minimal failing test for the next behavior.
 2. **Watch it fail** — run it; confirm it fails for the right reason (feature missing, not a typo). Mandatory — never skip.
-3. **GREEN** — the simplest code that passes. Nothing extra (YAGNI).
-4. **REFACTOR** — clean up while it stays green.
+3. **GREEN** — the simplest code that passes (KISS). Nothing extra (YAGNI).
+4. **REFACTOR** — clean up while it stays green, until the task's files pass the complexity gate (`plan-execute`'s `scripts/complexity.sh`, no function over 8) — a numeric exit, not a feeling; this is where SOLID earns its place — structure only where it's warranted, never abstraction YAGNI would reject.
 
 Repeat until the task's DoD scenario is green.
 
