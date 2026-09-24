@@ -72,7 +72,7 @@ Execute **continuously** — wave after wave, no pausing to ask "should I contin
 
 ### Progress file
 
-Keep a progress file at `.skills/plans/<plan-title>/progress.md`. On first use, ensure `.skills/` is ignored **globally** so it never lands in a repo — append it to the global gitignore (`git config --global core.excludesfile`; create and point one if it's unset). Its first line names the plan, so a resumed session matches it to this plan. Record, per **task and step**: status, the DoD/test/lint evidence, the commit hash, fix-round outcomes, decisions you made, and which tasks ran together in a wave. Mirror completion into the plan's own `[ ]`→`[x]` checkboxes. On resume: match the plan, skip what's done, continue — the progress file and `git log` outrank your memory after compaction.
+Keep a progress file at `.skills/plans/<plan-title>/progress.md`. On first use, ensure `.skills/` never lands in a repo — if `.skills/.gitignore` is missing, create it containing `*` (it ignores the whole folder, itself included; never touch the user's global gitignore). Its first line names the plan, so a resumed session matches it to this plan. Record, per **task and step**: status, the DoD/test/lint evidence, the commit hash, fix-round outcomes, decisions you made, and which tasks ran together in a wave. Mirror completion into the plan's own `[ ]`→`[x]` checkboxes. On resume: match the plan, skip what's done, continue — the progress file and `git log` outrank your memory after compaction.
 
 ## Finish
 

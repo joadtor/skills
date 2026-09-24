@@ -28,7 +28,7 @@ A green suite proves little on its own: tests that never fail when the code brea
 - **A feature branch with committed source.** A mutant is reverted with `git checkout -- <file>`, which only restores committed content, so every production file you'll mutate must be clean in `git status`. Uncommitted test files are fine — they're never mutated.
 - **The base** is found the way `code-review-expert` does it (`develop`, then `master`, then `main`, else origin's default); the script does this for you, or pass it explicitly.
 - **The spec, if there is one.** Look for the `.feature` in the plan's Context (`docs/plans/`) or `docs/specs/`. It is the authority for what a killing test may assert. No spec → survivors are batch-confirmed with the user (see Resolve).
-- **A ledger** at `.skills/mutations/<branch>/ledger.md`. On first use, ensure `.skills/` is ignored **globally** so it never lands in a repo — append it to the global gitignore (`git config --global core.excludesfile`; create and point one if it's unset). On resume: read the ledger, skip every mutant that already has a verdict.
+- **A ledger** at `.skills/mutations/<branch>/ledger.md`. On first use, ensure `.skills/` never lands in a repo — if `.skills/.gitignore` is missing, create it containing `*` (it ignores the whole folder, itself included; never touch the user's global gitignore). On resume: read the ledger, skip every mutant that already has a verdict.
 
 ## Step 1 — Find the candidates
 
