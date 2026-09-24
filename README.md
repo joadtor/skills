@@ -11,8 +11,7 @@ then review and prove the tests bite.
 ## Skills
 
 **Shape & specify**
-- **context-pumping** — surface the hidden assumptions, gaps, and open decisions in a plan or idea
-- **context-pumping-loop** — push a design to something stronger, not just clearer
+- **context-pumping** — surface the hidden assumptions and open decisions in a plan, and push the design to something stronger
 - **context-pumping-spec** — take a rough idea straight to an executable Gherkin spec
 - **spec-draft** — capture a settled behavior as a Gherkin `.feature` file
 
