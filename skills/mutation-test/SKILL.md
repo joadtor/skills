@@ -52,17 +52,33 @@ The script is deliberately dumb. **You are the filter:**
 - **No cap.** Every changed line with behaviour gets at least one mutant.
 - **Module size.** The finder warns when one file yields more than 50 candidates. A module that large is doing too much to harden in one sitting: report it and offer a split *before* mutating it. Don't split on your own.
 
-## Step 2 — The loop, one mutant at a time
+## Step 2 — Calibrate the resource budget
+
+Mutants are meant to break code, and broken code can turn a loop infinite or let an allocation grow without bound. Test runners also start one worker per core by default. Run unguarded, a single bad mutant can freeze the machine. Find out how much the machine can take by measuring safe runs first, never by crashing it.
+
+1. **Baseline the clean code.** Run the related tests (see Step 3.2) once, unmutated, starting **low**: 1–2 workers (`PARALLEL_TEST_PROCESSORS=2`, `jest --maxWorkers=2`, `pytest` without `-n` or `-n 2`, `cargo test -j 2 -- --test-threads=2`), under `nice -n 10`, wrapped in `/usr/bin/time -l` (macOS) or `/usr/bin/time -v` (Linux) to get wall time and peak memory.
+2. **Scale up while there's room.** If the baseline used a small share of the cores and RAM, add one worker step and measure again. Stop at the first step where load approaches the core count or memory passes half of the free RAM, then go back one step. Every step is a measured run on clean code. Never test the limit with a mutant.
+3. **Set the budget:** timeout = 3× the calibrated wall time (at least 30 s); memory ceiling = 3× the calibrated peak, capped at half the free RAM. Record workers, timeout, and ceiling in the ledger header and reuse them for every mutant.
+
+Every mutant run then goes through the guard:
+
+```bash
+timeout -k 10 <timeout>s nice -n 10 <related test command>   # macOS: gtimeout (brew install coreutils)
+```
+
+On Linux, also run `ulimit -v <ceiling-in-KB>` inside the same subshell. macOS ignores `ulimit -v`, so there you check the run's memory with `ps -o rss= -p <pid>` while it runs and kill it if it passes the ceiling. Long runs go in the background so a stuck mutant doesn't block you.
+
+## Step 3 — The loop, one mutant at a time
 
 Serially, no subagents: two live mutants and one red run tell you nothing about which one died.
 
 1. **Apply** exactly the one-line change with a single Edit. Confirm `git diff --stat` shows one file, one line.
 2. **Find the related tests** for that file — never the full suite (it runs 50 minutes on the big apps): the mirrored test file (`app/models/order.rb` → `spec/models/order_spec.rb`), every test file that references the file's class, module, or function names (grep the test tree), and the tests written for the task's scenarios.
-3. **Run them.** Red → **KILLED**. Green → **SURVIVED**. Doesn't parse or compile → **INVALID** — the mutant is broken, not the tests; discard it. Hangs → **TIMEOUT** — stop it, discard, note it. Only KILLED and SURVIVED count.
+3. **Run them under the Step 2 guard.** Red → **KILLED**. Green → **SURVIVED**. Doesn't parse or compile → **INVALID** — the mutant is broken, not the tests; discard it. Exceeds the timeout or the memory ceiling → **TIMEOUT** — make sure no runner or worker process is still alive (`pgrep -f <runner>`), discard, note it. Only KILLED and SURVIVED count.
 4. **Revert** with `git checkout -- <file>` and confirm `git diff --quiet -- <file>`.
 5. **Ledger** one line: file:line, label, mutant, tests run, verdict.
 
-## Step 3 — Resolve every survivor: three buckets, no fourth
+## Step 4 — Resolve every survivor: three buckets, no fourth
 
 - **Kill** — write the test that would have caught it. It comes from the **requirement, not the mutant**: the spec scenario the behaviour belongs to — its Given/When/Then is the test's arrange/act/assert. Then prove it: green on the real code; re-apply the mutant, run, **watch it go red**; revert. A killing test that never saw its mutant die is not evidence.
 - **Equivalent** — the change alters no observable behaviour (a dead branch, a boundary that can't occur, a value nothing reads). One-line reason in the ledger, no test.
@@ -86,6 +102,7 @@ Then:
 
 ```markdown
 # mutation-test — feature/guest-checkout · base origin/develop · spec docs/specs/2026-09-10-guest-checkout.feature
+budget: 2 workers · timeout 90s · memory 3 GB (baseline 28s, 1 GB peak)
 
 | # | file:line | label | mutant | tests run | verdict | resolution |
 |---|---|---|---|---|---|---|
@@ -104,6 +121,8 @@ One file: `scripts/lang/<lang>.sh` — source `_common.sh` with the language's c
 
 - Running the full suite per mutant → related tests only; find them by mirror path, symbol grep, and scenario.
 - Two mutants live at once, or parallel subagents → serial; one mutant, one run, one verdict.
+- Running mutants with the runner's default workers and no timeout or memory limit → calibrate on clean code first (Step 2), then guard every run.
+- Leaving worker processes alive after a TIMEOUT → check none are left before the next mutant, or the load builds up run after run.
 - Counting a syntax-broken mutant as KILLED → it's INVALID; the tests never ran.
 - Writing the killing test from the mutant → from the spec scenario, then watch it fail against the mutant.
 - "Accepting" a survivor → kill, equivalent, or spec gap; nothing else.
