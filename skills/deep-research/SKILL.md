@@ -105,7 +105,7 @@ When the agents return, read each finding's **quote**, not its claim — an agen
 
 ### 3b. Recover blocked sources — the lead, with a browser
 
-Union the agents' "Sources not reached". For each one that would change a finding, and only if a browser MCP (Chrome DevTools, Playwright) is loaded in your session, open it there, read `document.body.innerText`, close the page (see "Fetching a blocked page"). Bot checks usually pass in a real browser; TLS errors and login walls never do, and a paywalled page counts as fetched only for the part you could read. Recovered text is a fetch in this run and may be cited; everything still unread stays in "Sources not reached".
+Union the agents' "Sources not reached". For each one that would change a finding, retry it in headless Chrome from the shell. Only if that fails and a browser MCP (Chrome DevTools, Playwright) is loaded, open it there, read `document.body.innerText`, and close the page. The MCP opens a visible window, so it is the last resort (see "Fetching a blocked page"). Bot checks usually pass in a real browser; TLS errors and login walls never do, and a paywalled page counts as fetched only for the part you could read. Recovered text is a fetch in this run and may be cited; everything still unread stays in "Sources not reached".
 
 ### 4. Verify — a fresh agent re-fetches the load-bearing claims
 
@@ -149,7 +149,7 @@ Write the report to the output path (default `docs/research/<YYYY-MM-DD>-<slug>.
 
 ## Fetching a blocked page
 
-Agents and verifiers use the curl step; the browser step is the lead's (step 3b).
+Agents and verifiers use the curl step; the headless and browser steps are the lead's (step 3b).
 
 ```bash
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
@@ -161,7 +161,18 @@ t = html.unescape(re.sub(r"<[^>]+>", " ", t))
 print(re.sub(r"\s+", " ", t)[:15000])'
 ```
 
-Still blocked, and the lead has a browser MCP loaded (in Claude Code these tools are deferred — load them with ToolSearch first):
+Still blocked → the lead retries in headless Chrome from the shell. No window opens, so the research stays invisible to the user:
+
+```bash
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"  # Linux: google-chrome
+PROFILE=$(mktemp -d)
+"$CHROME" --headless=new --user-data-dir="$PROFILE" --virtual-time-budget=5000 --dump-dom "$URL" 2>/dev/null | python3 -c '<same stripper as above>'
+rm -rf "$PROFILE"
+```
+
+The throwaway `--user-data-dir` is required: without it, a Chrome the user already has open takes over the launch and the page opens as a visible tab in their window.
+
+Still blocked, and a browser MCP is loaded → last resort, because the MCP opens a visible Chrome window, and whether it runs headless is fixed in its server config, not per call. Use it only for sources that would change a finding (in Claude Code these tools are deferred — load them with ToolSearch first):
 
 - **Chrome DevTools MCP:** `new_page(url)` → `evaluate_script(pageId, () => document.body.innerText.slice(0, 15000))` → `close_page`. Take the text inline — the MCP can't write files outside its workspace roots.
 - **Playwright MCP:** `browser_navigate(url)` → `browser_evaluate(() => document.body.innerText.slice(0, 15000))` → `browser_close`.
