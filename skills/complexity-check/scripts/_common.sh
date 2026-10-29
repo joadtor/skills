@@ -31,7 +31,9 @@ target_files() {
     mb=$(git merge-base "origin/$(base_branch)" HEAD)
     { git diff --name-only --diff-filter=AMR "$mb"; git ls-files --others --exclude-standard; }
   fi | grep -Ev "$skip" | sort -u | while IFS= read -r f; do
-    [ -f "$f" ] && printf '%s\n' "$f"
+    [ -f "$f" ] || continue
+    case $f in -*) f=./$f ;; esac # a repo file must never be parsed as a tool's option
+    printf '%s\n' "$f"
   done
 }
 

@@ -78,3 +78,16 @@ t_python_tool_missing() {
   assert_exit 3
   assert_contains "$ERR" "radon not found"
 }
+
+t_python_repo_modules_not_imported() {
+  need_radon
+  local repo marker; repo=$(fixture); marker="$TEST_TMP/imported"
+  copy_fixture "$repo" python/over.py app/over.py
+  add_file "$repo" json.py "open('$marker', 'w').write('x')"
+  add_file "$repo" configparser.py "open('$marker', 'w').write('x')"
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$TEST_CACHE"
+  run_in "$repo" "$SCRIPTS/lang/python.sh" app/over.py
+  assert_exit 1
+  [ ! -e "$marker" ] || fail "a module from the project was imported"
+}

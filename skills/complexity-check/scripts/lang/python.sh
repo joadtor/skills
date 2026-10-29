@@ -7,7 +7,7 @@ limit=$(default_limit python)
 src="skill default"
 
 # First project config that sets max-complexity wins: ruff (pyproject, ruff.toml), then flake8.
-found=$(python3 -c '
+found=$(python3 -I -c '
 import configparser, os, re, sys
 try:
     import tomllib
@@ -67,7 +67,7 @@ run=$(resolve radon)
 
 out=$($run cc -j "$@") || exit 2
 
-hits=$(printf '%s\n' "$out" | python3 -c '
+hits=$(printf '%s\n' "$out" | python3 -I -c '
 import json, sys
 limit, src = int(sys.argv[1]), sys.argv[2]
 seen = set()

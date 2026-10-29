@@ -86,3 +86,15 @@ t_common_project_tool_preferred() {
   run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH=/usr/bin:/bin bash -c ". \"$SCRIPTS/_common.sh\"; resolve rubocop"
   assert_eq "$OUT" ""
 }
+
+t_common_dash_paths_never_look_like_flags() {
+  local r; r="$(fixture)"
+  add_file "$r" "--rule=x.js" "x"
+  add_file "$r" "app/-ok.rb" "x"
+  commit_all "$r" "dash"
+  _common "$r" target_files
+  assert_contains "$OUT" "./--rule=x.js"
+  assert_contains "$OUT" "app/-ok.rb"
+  assert_not_contains "$OUT" "
+--rule"
+}
