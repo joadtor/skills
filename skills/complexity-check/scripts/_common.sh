@@ -2,9 +2,10 @@
 #
 # On source: cd to the repo top level and set CACHE (not created here).
 #   base_branch          echo the base: first of develop, master, main on origin, else origin's default branch
-#   target_files [path]  repo-relative production files, sorted, unique, existing
+#   target_files [path...]
+#                        repo-relative production files, sorted, unique, existing
 #                        no path: changed vs merge-base with origin/<base> + untracked non-ignored
-#                        path:    every tracked + untracked non-ignored file under it
+#                        paths:   every tracked + untracked non-ignored file under each
 #   lang_of <file>       ruby | js | python | go | rust | (empty)
 #   default_limit <lang> per-function complexity ceiling for the language
 #   resolve <tool>       command to run: project-local, then PATH, then $CACHE/bin; empty if none
@@ -24,8 +25,8 @@ target_files() {
   # Not production code: tests, fixtures, vendored or generated output, migrations, config and data files.
   local skip='(^|/)(spec|test|tests|__tests__|__mocks__|fixtures?|features|node_modules|vendor|dist|build|target|coverage|db/migrate)/|(_spec|_test|\.test|\.spec|\.stories|\.config|\.d)\.[a-z]+$|(^|/)(schema\.rb|conftest\.py|setup\.py)$|\.(json|ya?ml|toml|lock|md|txt|csv|snap|min\.js)$'
   local f
-  if [ -n "${1:-}" ]; then
-    { git ls-files -- "$1"; git ls-files --others --exclude-standard -- "$1"; }
+  if [ $# -gt 0 ]; then
+    { git ls-files -- "$@"; git ls-files --others --exclude-standard -- "$@"; }
   else
     local mb
     mb=$(git merge-base "origin/$(base_branch)" HEAD)

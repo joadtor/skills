@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Complexity check — lists functions over the per-language limit. Installs nothing, uses no network.
 #
-# Usage: check.sh [path]
+# Usage: check.sh [path...]
 #   No path: the changed code (vs the merge-base with origin/<base>, plus untracked files).
-#   A path:  everything under it.
+#   Paths:   everything under each (files or directories).
 #   Files are grouped by language and each language present is handed to its script.
 #
 # Language-script contract — lang/<lang>.sh <file>..., run from the repo root
@@ -31,7 +31,7 @@ pretty() {
 over=0 skipped=0
 skip() { skipped=$((skipped + 1)); echo "complexity: skipped $(pretty "$1") ($2) — unchecked: $3" >&2; }
 
-files=$(target_files "${1:-}")
+files=$(target_files "$@")
 for lang in ruby js python go rust; do
   list=$(while IFS= read -r f; do
     [ -n "$f" ] && [ "$(lang_of "$f")" = "$lang" ] && printf '%s\n' "$f"

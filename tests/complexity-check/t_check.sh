@@ -70,3 +70,12 @@ t_check_groups_by_language() {
   assert_contains "$ERR" "js: web/b.ts"
   assert_not_contains "$ERR" "js: app/a.rb"
 }
+
+t_check_several_paths() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" app/a.rb "x"; add_file "$r" lib/b.rb "x"; add_file "$r" other/c.rb "x"; commit_all "$r"
+  stub "$LD" ruby 'echo "args: $*" >&2; exit 0'
+  check "$r" app/a.rb lib
+  assert_contains "$ERR" "args: app/a.rb lib/b.rb"
+  assert_not_contains "$ERR" "other/c.rb"
+}

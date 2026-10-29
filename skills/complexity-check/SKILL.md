@@ -1,7 +1,7 @@
 ---
 name: complexity-check
 description: Use when asked to check, measure, or reduce the cyclomatic complexity of the branch's changed code or of a path — reports every function over its language's limit, then refactors only with the user's agreement, under the test suite. Other skills invoke it as `complexity-check check-only`.
-argument-hint: "[check-only] [path]"
+argument-hint: "[setup|check-only] [path...]"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh *), Bash(${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan *)
 ---
 
@@ -15,8 +15,8 @@ Measure the complexity of every function in scope with each language's own tool,
 
 The work is split in two scripts:
 
-- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh [path]` — measures. Offline, installs nothing; a language whose tool is missing is skipped, with its files named.
-- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan [path]` / `install <tool>…` — lists the missing tools, then installs only the ones the user approved into `~/.cache/joadtor/complexity-check/`. Never into the project.
+- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh [path...]` — measures. Offline, installs nothing; a language whose tool is missing is skipped, with its files named.
+- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan [path...]` / `install <tool>…` — lists the missing tools, then installs only the ones the user approved into `~/.cache/joadtor/complexity-check/`. Never into the project.
 
 Limits per language, the install methods, and the refactor playbook are in `reference.md` — read it before refactoring.
 
@@ -26,13 +26,14 @@ Limits per language, the install methods, and the refactor playbook are in `refe
 |---|---|---|
 | `complexity-check` | functions in files changed on the branch vs its base | yes |
 | `complexity-check <path>` | every function under the path | yes |
-| `complexity-check check-only [path]` | same scope; used by other skills | **never** |
+| `complexity-check setup [path...]` | step 1 only; used by other skills before a run | once, if a tool is missing |
+| `complexity-check check-only [path...]` | same scope; used by other skills | **never** |
 
-**`check-only`** (another skill invoked you, often from a subagent that can't ask): run `check.sh` once, return its stdout and stderr verbatim, and stop. No setup, no install, no refactor, no question. A missing tool stays a reported skip.
+**`setup`** runs step 1 and stops — no check, no report. **`check-only`** (another skill invoked you, often from a subagent that can't ask): run `check.sh` once, return its stdout and stderr verbatim, and stop. No setup, no install, no refactor, no question. A missing tool stays a reported skip.
 
 ## 1. Set up — one question, only if something is missing
 
-Run `setup.sh plan [path]`. Empty output → go to step 2 without asking. Otherwise each line is `lang  tool  version  method  scope`; ask **once** with `AskUserQuestion`, listing every tool with its version and the cache path, and say plainly that the project's files are not touched:
+Run `setup.sh plan [path...]`. Empty output → go to step 2 without asking. Otherwise each line is `lang  tool  version  method  scope`; ask **once** with `AskUserQuestion`, listing every tool with its version and the cache path, and say plainly that the project's files are not touched:
 
 - `scope = global-toolchain` (clippy) → say it changes the user's Rust toolchain via `rustup`, not the cache.
 - `scope = runtime-missing` → not installable here; tell the user what to install, and that language will be skipped.
@@ -41,7 +42,7 @@ Options: **Install all** · **Pick which** · **Skip** (those languages go unche
 
 ## 2. Check, then report before touching anything
 
-Run `check.sh [path]`. Each stdout line is `file:line  lang  function  metric  score  limit  source`; stderr names skipped languages and bypassed configs. Report to the user **before any edit**:
+Run `check.sh [path...]`. Each stdout line is `file:line  lang  function  metric  score  limit  source`; stderr names skipped languages and bypassed configs. Report to the user **before any edit**:
 
 - every offender: `file:line`, the function, score vs limit, **where the limit came from** (the `source` column — a project setting, or the skill default), and a one-line suggested refactor;
 - every skipped language with its unchecked files;

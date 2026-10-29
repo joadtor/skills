@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Plan and install the complexity tools. Never prompts: the skill asks the user for consent.
 #
-# Usage: setup.sh plan [path]        one TAB-separated line per MISSING tool for the languages being checked:
+# Usage: setup.sh plan [path...]      one TAB-separated line per MISSING tool for the languages being checked:
 #                                    lang  tool  version  method  scope
 #                                    scope: cache | global-toolchain (clippy, via rustup) | runtime-missing (method names what to install)
 #        setup.sh install <tool>...  install exactly those tools into the cache, never into the project
@@ -56,7 +56,7 @@ method_for() {
 
 plan() {
   local lang tool rt missing scope method name
-  target_files "${1:-}" | while IFS= read -r f; do lang_of "$f"; done | sort -u | while IFS= read -r lang; do
+  target_files "$@" | while IFS= read -r f; do lang_of "$f"; done | sort -u | while IFS= read -r lang; do
     [ -n "$lang" ] || continue
     tool=$(tool_for "$lang")
     present "$tool" && continue
@@ -109,5 +109,5 @@ install() {
 case "${1:-}" in
   plan)    shift; plan "$@" ;;
   install) shift; install "$@" ;;
-  *) echo "usage: setup.sh plan [path] | install <tool>..." >&2; exit 2 ;;
+  *) echo "usage: setup.sh plan [path...] | install <tool>..." >&2; exit 2 ;;
 esac
