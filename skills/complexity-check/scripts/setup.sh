@@ -26,7 +26,8 @@ tool_for() {
 
 present() {
   case "$1" in
-    clippy) have cargo && cargo clippy --version >/dev/null 2>&1 ;;
+    # From / so a project rust-toolchain.toml can't make rustup install a toolchain before consent.
+    clippy) have cargo && (cd / && cargo clippy --version) >/dev/null 2>&1 ;;
     *) [ -n "$(resolve "$1")" ] ;;
   esac
 }
@@ -69,7 +70,7 @@ plan() {
 }
 
 install_rubocop() {
-  gem install rubocop -v "$RUBOCOP_VERSION" --install-dir "$CACHE/gems" --no-document >/dev/null || return 1
+  gem install rubocop -v "$RUBOCOP_VERSION" --remote --install-dir "$CACHE/gems" --no-document >/dev/null || return 1
   cat > "$CACHE/bin/rubocop" <<WRAP
 #!/bin/sh
 GEM_HOME="$CACHE/gems" GEM_PATH="$CACHE/gems" exec "$CACHE/gems/bin/rubocop" "\$@"
@@ -78,12 +79,12 @@ WRAP
 }
 
 install_eslint() {
-  npm install --prefix "$CACHE/node" --no-save --no-package-lock --ignore-scripts \
+  npm install --prefix "$CACHE/node" --registry=https://registry.npmjs.org/ --no-save --no-package-lock --ignore-scripts \
     "eslint@$ESLINT_VERSION" "typescript-eslint@$TS_ESLINT_VERSION" "typescript@$TYPESCRIPT_VERSION" >/dev/null || return 1
   ln -sf "$CACHE/node/node_modules/.bin/eslint" "$CACHE/bin/eslint"
 }
 
-install_radon()   { UV_TOOL_DIR="$CACHE/uv" UV_TOOL_BIN_DIR="$CACHE/bin" uv tool install "radon==$RADON_VERSION" >/dev/null; }
+install_radon()   { UV_TOOL_DIR="$CACHE/uv" UV_TOOL_BIN_DIR="$CACHE/bin" uv tool install --no-config --default-index https://pypi.org/simple "radon==$RADON_VERSION" >/dev/null; }
 install_gocyclo() { GOBIN="$CACHE/bin" go install "github.com/fzipp/gocyclo/cmd/gocyclo@$GOCYCLO_VERSION"; }
 install_clippy()  { rustup component add clippy >/dev/null; }
 
@@ -95,7 +96,9 @@ install() {
     for rt in $(runtimes_for "$tool"); do
       have "$rt" || { echo "setup: $tool not installed: $rt is missing" >&2; status=1; continue 2; }
     done
-    if ! err=$("install_$tool" 2>&1 >/dev/null); then
+    # Installers run from the cache, never the project: a repo's .gem files, .npmrc, uv.toml or
+    # rust-toolchain.toml must not choose what gets installed.
+    if ! err=$(cd "$CACHE" && "install_$tool" 2>&1 >/dev/null); then
       echo "setup: $tool install failed: $(printf '%s' "$err" | grep -v '^$' | tail -n 1)" >&2
       status=1
     fi
