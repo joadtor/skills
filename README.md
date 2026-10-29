@@ -17,7 +17,7 @@ then review and prove the tests bite.
 
 **Plan & build**
 - **plan-draft** — turn a design + spec into a concrete, test-first execution plan
-- **plan-execute** — run the plan: parallelize independent tasks, gate each on tests/lint/complexity, commit per task
+- **plan-execute** — run the plan: parallelize independent tasks, gate each on tests/lint, commit per task, finish with a review + complexity loop
 - **plan-execute-tdd** — the same executor under the TDD iron law: a failing test before any production code
 
 **Review & verify**
