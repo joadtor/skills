@@ -24,6 +24,7 @@ then review and prove the tests bite.
 - **code-review-expert** — confidence-gated review of a diff or branch for real bugs, security, and quality issues
 - **pr-review** — multi-agent PR review; split blocking vs nitpick and publish inline via `gh`
 - **mutation-test** — plant one bug at a time to prove the tests actually bite
+- **complexity-check** — report functions over a per-language complexity limit, then refactor them only with your go-ahead
 - **pr-changelog** — brief, user-facing changelog bullets for a PR description
 
 **Research**
