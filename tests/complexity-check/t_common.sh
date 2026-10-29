@@ -98,3 +98,12 @@ t_common_dash_paths_never_look_like_flags() {
   assert_not_contains "$OUT" "
 --rule"
 }
+
+t_common_broken_path_shim_ignored() {
+  local r shims; r="$(fixture)"; shims="$TEST_TMP/shims"
+  mkdir -p "$shims"
+  printf '#!/bin/sh\necho "nodenv: eslint: command not found" >&2\nexit 127\n' > "$shims/eslint"
+  chmod +x "$shims/eslint"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH="$shims:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve eslint"
+  assert_eq "$OUT" "" "a version-manager shim that can't run is not a tool"
+}

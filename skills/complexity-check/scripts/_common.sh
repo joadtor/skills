@@ -60,7 +60,8 @@ resolve() {
     rubocop) grep -q ' rubocop (' Gemfile.lock 2>/dev/null && { echo "bundle exec rubocop"; return; } ;;
     eslint)  [ -x node_modules/.bin/eslint ] && { echo node_modules/.bin/eslint; return; } ;;
   esac
-  if command -v "$1" >/dev/null 2>&1; then echo "$1"
+  # A version-manager shim (nodenv, rbenv, asdf) is on PATH even when the tool isn't installed — it must run.
+  if command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; then echo "$1"
   elif [ -x "$CACHE/bin/$1" ]; then echo "$CACHE/bin/$1"
   fi
   return 0
