@@ -18,6 +18,8 @@ The work is split in two scripts:
 - `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh [path...]` — measures. Offline, installs nothing; a language whose tool is missing is skipped, with its files named.
 - `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan [path...]` / `install <tool>…` — lists the missing tools, then installs only the ones the user approved into `~/.cache/joadtor/complexity-check/`. Never into the project.
 
+**Checking a repo runs that repo's code**, the same as running its tests: RuboCop evaluates ERB in `.rubocop.yml`, ESLint loads `eslint.config.js`, cargo compiles `build.rs` and proc-macros. Only check a repo whose tests you'd run.
+
 Limits per language, the install methods, and the refactor playbook are in `reference.md` — read it before refactoring.
 
 ## Modes

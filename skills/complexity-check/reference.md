@@ -24,6 +24,10 @@ A function fails when its score is **over** the limit; at the limit it passes.
 
 Otherwise the skill default applies (`source = skill default`).
 
+## Trust
+
+The check honors the project's own lint configuration — its limits, plugins, and exclusions — so it runs the code those configs contain: ERB in `.rubocop.yml` (also when inherited into the cached rubocop's temporary config), `eslint.config.js`, cargo build scripts and proc-macros. That is the same trust as running the project's test suite, which the refactor loop does anyway. Only check repos you'd run the tests of. What the check itself never does: evaluate a config value as shell, import a module from the repo into its own helpers, or download anything.
+
 ## Tools and where they come from
 
 `check.sh` runs the project's own tool first (`bundle exec rubocop`, `node_modules/.bin/eslint`), then one on the `PATH`, then the cache `~/.cache/joadtor/complexity-check/bin/`. When a project's `.rubocop.yml` can't load (a plugin gem isn't installed for the rubocop being used), the check bypasses it with a temporary config holding only the limits, and says so.
