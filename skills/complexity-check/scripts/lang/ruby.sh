@@ -16,10 +16,12 @@ run=$(resolve rubocop)
 # Built-in defaults are read too, so a merged value equal to the default isn't mistaken for a project setting.
 COPS=Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity
 export MERGED="" DEFAULTS=""
-if grep -Eq '^inherit_(from|gem)' .rubocop.yml 2>/dev/null; then
+REMOTE=""
+grep -Eq 'https?://' .rubocop.yml 2>/dev/null && REMOTE=1
+if [ -z "$REMOTE" ] && grep -Eq '^inherit_(from|gem)' .rubocop.yml 2>/dev/null; then
   MERGED=$($run --show-cops "$COPS" 2>/dev/null) || MERGED=""
   : > "$tmp/empty.yml"
-  [ -n "$MERGED" ] && { DEFAULTS=$(cd "$tmp" && $run -c "$tmp/empty.yml" --show-cops "$COPS" 2>/dev/null) || MERGED=""; }
+  [ -n "$MERGED" ] && { DEFAULTS=$($run -c "$tmp/empty.yml" --show-cops "$COPS" 2>/dev/null) || MERGED=""; }
 fi
 
 IFS=$'\t' read -r CYC_LIMIT CYC_SRC PERC_LIMIT PERC_SRC <<EOF2
@@ -72,9 +74,10 @@ run_rubocop() {
     --format json --force-exclusion "$@" > "$tmp/out.json" 2> "$tmp/err"
 }
 
-if [ -f .rubocop.yml ]; then write_config inherit; else write_config plain; fi
+if [ -f .rubocop.yml ] && [ -z "$REMOTE" ]; then write_config inherit; else write_config plain; fi
+[ -n "$REMOTE" ] && echo "complexity: Ruby — project .rubocop.yml bypassed (remote inherit_from; the check never downloads)" >&2
 run_rubocop "$@"; status=$?
-if [ $status -ge 2 ] && [ -f .rubocop.yml ]; then
+if [ $status -ge 2 ] && [ -f .rubocop.yml ] && [ -z "$REMOTE" ]; then
   write_config plain
   echo "complexity: Ruby — project .rubocop.yml bypassed ($(head -n 1 "$tmp/err"))" >&2
   run_rubocop "$@"; status=$?

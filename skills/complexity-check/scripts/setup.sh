@@ -6,6 +6,7 @@
 #                                    scope: cache | global-toolchain (clippy, via rustup) | runtime-missing (method names what to install)
 #        setup.sh install <tool>...  install exactly those tools into the cache, never into the project
 # Exit: plan 0 · install 0 if all succeeded, else 1 with a stderr line per failure.
+#       2 no base branch (no path given)
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh" || exit 1
 
 # Exact pins.
@@ -67,7 +68,7 @@ runtime_too_old() {
 plan() {
   local lang tool rt missing scope method name files a old
   files=$(target_files "$@") || return 2
-  { printf '%s\n' "$files"; for a in "$@"; do printf '%s\n' "$a"; done; } | while IFS= read -r f; do lang_of "$f"; done | sort -u | while IFS= read -r lang; do
+  { printf '%s\n' "$files"; for a in "$@"; do printf '%s\n' "$a" | grep -Ev "$SKIP_RE"; done; } | while IFS= read -r f; do lang_of "$f"; done | sort -u | while IFS= read -r lang; do
     [ -n "$lang" ] || continue
     tool=$(tool_for "$lang")
     present "$tool" && continue

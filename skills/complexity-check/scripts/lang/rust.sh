@@ -7,7 +7,16 @@
 export CARGO_NET_OFFLINE=true RUSTUP_AUTO_INSTALL=0
 
 [ -f Cargo.toml ] || { echo "no Cargo.toml at the repo root" >&2; exit 3; }
-cargo clippy --version >/dev/null 2>&1 || { echo "cargo clippy not available" >&2; exit 3; }
+if ! cargo clippy --version >/dev/null 2>&1; then
+  for tf in rust-toolchain.toml rust-toolchain; do
+    [ -f "$tf" ] || continue
+    chan=$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$tf" | head -n 1)
+    [ -z "$chan" ] && chan=$(head -n 1 "$tf" | tr -d '[:space:]')
+    echo "the project's pinned toolchain ($tf) has no clippy — rustup component add clippy --toolchain $chan" >&2
+    exit 3
+  done
+  echo "cargo clippy not available" >&2; exit 3
+fi
 
 # No cache busting needed: clippy tracks CLIPPY_CONF_DIR and the clippy.toml contents, so cargo re-checks the crate
 # when the threshold changes (verified in t_rust_stale_cache). Touching sources or cleaning target/ is not required.

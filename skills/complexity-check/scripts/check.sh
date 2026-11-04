@@ -19,6 +19,7 @@
 # stdout: the offender lines, unchanged.
 # stderr: language notices; one "skipped <Lang> (<reason>) — unchecked: <files>" per skipped language; a summary.
 # Exit 1 if any function is over its limit, else 0 — a skipped language alone never fails.
+#      2 no base branch (no path given)
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh" || exit 1
 LANG_DIR=${COMPLEXITY_CHECK_LANG_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lang}
 

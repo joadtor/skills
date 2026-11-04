@@ -160,3 +160,12 @@ t_setup_plan_old_node_is_runtime_missing() {
   _setup "$r" "$s" "$(mktmp)" plan
   assert_not_contains "$OUT" "runtime-missing"
 }
+
+t_setup_plan_skips_test_file_arguments() {
+  local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s"
+  add_file "$r" spec/x_spec.rb "describe 1"
+  commit_all "$r"
+  _setup "$r" "$s" "$(mktmp)" plan spec/x_spec.rb
+  assert_exit 0
+  assert_eq "$OUT" ""
+}

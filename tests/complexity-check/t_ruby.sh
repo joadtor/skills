@@ -131,3 +131,38 @@ EOT
   assert_exit 1
   assert_contains "$OUT" "Huge#run${TAB}cyclomatic${TAB}13${TAB}12${TAB}.rubocop.yml"
 }
+
+t_ruby_inherited_max_through_bundle_exec() {
+  skip_unless_cmd rubocop
+  local repo bin real; repo=$(fixture); bin="$(mktmp)/bin"; mkdir -p "$bin"
+  real=$(command -v rubocop)
+  printf "source 'https://rubygems.org'\ngem 'rubocop'\n" > "$repo/Gemfile"
+  printf 'GEM\n  specs:\n    rubocop (1.50.2)\n' > "$repo/Gemfile.lock"
+  printf '#!/bin/sh\n[ -f Gemfile ] || { echo "Could not locate Gemfile" >&2; exit 10; }\nshift 2\nexec "%s" "$@"\n' "$real" > "$bin/bundle"
+  chmod +x "$bin/bundle"
+  add_file "$repo" .rubocop.yml "inherit_from: base.yml"
+  add_file "$repo" base.yml - <<'EOT'
+Metrics/CyclomaticComplexity:
+  Max: 20
+Metrics/PerceivedComplexity:
+  Max: 20
+EOT
+  copy_fixture "$repo" ruby/thirteen.rb app/thirteen.rb
+  commit_all "$repo"
+  run_in "$repo" env PATH="$bin:$PATH" "$SCRIPTS/lang/ruby.sh" app/thirteen.rb
+  assert_exit 0
+  assert_eq "$OUT" ""
+}
+
+t_ruby_remote_inherit_never_downloads() {
+  skip_unless_cmd rubocop
+  local repo; repo=$(fixture)
+  add_file "$repo" .rubocop.yml "inherit_from: http://127.0.0.1:9/shared.yml"
+  copy_fixture "$repo" ruby/thirteen.rb app/thirteen.rb
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/ruby.sh" app/thirteen.rb
+  assert_exit 1
+  assert_contains "$ERR" "remote inherit_from"
+  assert_not_contains "$ERR" "TCP connection"
+  assert_contains "$OUT" "Huge#run${TAB}cyclomatic${TAB}13${TAB}8${TAB}skill default"
+}

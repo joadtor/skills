@@ -24,9 +24,10 @@ base_branch() {
   echo "$b"
 }
 
+# Not production code: tests, fixtures, vendored or generated output, migrations, config and data files.
+SKIP_RE='(^|/)(spec|test|tests|__tests__|__mocks__|fixtures?|features|node_modules|vendor|dist|build|target|coverage|db/migrate)/|(_spec|_test|\.test|\.spec|\.stories|\.config|\.d)\.[a-z]+$|(^|/)(schema\.rb|conftest\.py|setup\.py)$|(^|/)test_[^/]*\.py$|\.(json|ya?ml|toml|lock|md|txt|csv|snap|min\.js)$'
+
 target_files() {
-  # Not production code: tests, fixtures, vendored or generated output, migrations, config and data files.
-  local skip='(^|/)(spec|test|tests|__tests__|__mocks__|fixtures?|features|node_modules|vendor|dist|build|target|coverage|db/migrate)/|(_spec|_test|\.test|\.spec|\.stories|\.config|\.d)\.[a-z]+$|(^|/)(schema\.rb|conftest\.py|setup\.py)$|(^|/)test_[^/]*\.py$|\.(json|ya?ml|toml|lock|md|txt|csv|snap|min\.js)$'
   local f a mb
   if [ $# -gt 0 ]; then
     for a in "$@"; do
@@ -48,7 +49,7 @@ target_files() {
     else
       git diff --name-only --diff-filter=AMR "$mb"; git ls-files --others --exclude-standard
     fi
-  } | grep -Ev "$skip" | sort -u | while IFS= read -r f; do
+  } | grep -Ev "$SKIP_RE" | sort -u | while IFS= read -r f; do
     [ -f "$f" ] || continue
     case $f in -*) f=./$f ;; esac # a repo file must never be parsed as a tool's option
     printf '%s\n' "$f"

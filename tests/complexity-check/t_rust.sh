@@ -127,3 +127,17 @@ t_rust_subfolder_crate_skip_reason() {
   assert_contains "$ERR" "skipped Rust (no Cargo.toml at the repo root)"
   assert_not_contains "$ERR" "run setup"
 }
+
+t_rust_pinned_toolchain_without_clippy() {
+  local r bin; r="$(fixture)"; bin="$(mktmp)/bin"; mkdir -p "$bin"
+  printf '#!/bin/sh\nexit 1\n' > "$bin/cargo"; chmod +x "$bin/cargo"
+  copy_fixture "$r" rust/Cargo.toml Cargo.toml
+  copy_fixture "$r" rust/over.rs src/lib.rs
+  add_file "$r" rust-toolchain.toml '[toolchain]
+channel = "1.60.0"'
+  commit_all "$r"
+  run_in "$r" env PATH="$bin:$PATH" "$SCRIPTS/check.sh" src/lib.rs
+  assert_contains "$ERR" "pinned toolchain"
+  assert_contains "$ERR" "--toolchain 1.60.0"
+  assert_not_contains "$ERR" "run setup"
+}
