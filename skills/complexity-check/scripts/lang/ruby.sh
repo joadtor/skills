@@ -12,16 +12,34 @@ trap 'rm -rf "$tmp"' EXIT
 run=$(resolve rubocop)
 [ -z "$run" ] && { echo "rubocop not found" >&2; exit 3; }
 
+# A remote inherit_from can sit at any depth of the config chain, so every rubocop call goes through a dead
+# proxy: a fetch fails at once and the check falls back to the plain config — it never downloads.
+rubocop_offline() {
+  http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 \
+    HTTPS_PROXY=http://127.0.0.1:9 no_proxy= NO_PROXY= $run "$@"
+}
+
 # A Max set in a file the project config inherits (inherit_from) only shows in rubocop's merged config.
 # Built-in defaults are read too, so a merged value equal to the default isn't mistaken for a project setting.
 COPS=Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity
 export MERGED="" DEFAULTS=""
 REMOTE=""
-grep -Eq 'https?://' .rubocop.yml 2>/dev/null && REMOTE=1
+# Walk the local inherit_from chain: a URL at any depth means remote (the proxy can't stop loopback URLs).
+ruby -ryaml -e '
+  seen = {}
+  walk = lambda do |f|
+    next false if seen[f] || !File.file?(f)
+    seen[f] = true
+    cfg = (YAML.safe_load(File.read(f), aliases: true) rescue nil)
+    next false unless cfg.is_a?(Hash)
+    Array(cfg["inherit_from"]).any? { |p| p.to_s =~ %r{\Ahttps?://} || walk.(File.expand_path(p.to_s, File.dirname(f))) }
+  end
+  exit(walk.(File.expand_path(".rubocop.yml")) ? 0 : 1)
+' 2>/dev/null && REMOTE=1
 if [ -z "$REMOTE" ] && grep -Eq '^inherit_(from|gem)' .rubocop.yml 2>/dev/null; then
-  MERGED=$($run --show-cops "$COPS" 2>/dev/null) || MERGED=""
+  MERGED=$(rubocop_offline --show-cops "$COPS" 2>/dev/null) || MERGED=""
   : > "$tmp/empty.yml"
-  [ -n "$MERGED" ] && { DEFAULTS=$($run -c "$tmp/empty.yml" --show-cops "$COPS" 2>/dev/null) || MERGED=""; }
+  [ -n "$MERGED" ] && { DEFAULTS=$(rubocop_offline -c "$tmp/empty.yml" --show-cops "$COPS" 2>/dev/null) || MERGED=""; }
 fi
 
 IFS=$'\t' read -r CYC_LIMIT CYC_SRC PERC_LIMIT PERC_SRC <<EOF2
@@ -70,7 +88,7 @@ EOF2
 }
 
 run_rubocop() {
-  $run -c "$tmp/rubocop.yml" --only Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity \
+  rubocop_offline -c "$tmp/rubocop.yml" --only Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity \
     --format json --force-exclusion "$@" > "$tmp/out.json" 2> "$tmp/err"
 }
 

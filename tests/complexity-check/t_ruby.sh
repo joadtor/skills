@@ -166,3 +166,21 @@ t_ruby_remote_inherit_never_downloads() {
   assert_not_contains "$ERR" "TCP connection"
   assert_contains "$OUT" "Huge#run${TAB}cyclomatic${TAB}13${TAB}8${TAB}skill default"
 }
+
+t_ruby_nested_remote_inherit_never_fetched() {
+  skip_unless_cmd rubocop
+  local repo marker port pid; repo=$(fixture); marker="$TEST_TMP/fetched"
+  port=$(ruby -rsocket -e 's = TCPServer.new("127.0.0.1", 0); puts s.addr[1]; s.close')
+  ruby -rsocket -e 's = TCPServer.new("127.0.0.1", ARGV[0].to_i); c = s.accept; File.write(ARGV[1], "x"); c.close' "$port" "$marker" &
+  pid=$!
+  sleep 1
+  add_file "$repo" .rubocop.yml "inherit_from: base.yml"
+  add_file "$repo" base.yml "inherit_from: http://127.0.0.1:$port/shared.yml"
+  copy_fixture "$repo" ruby/thirteen.rb app/thirteen.rb
+  commit_all "$repo"
+  run_in "$repo" env -u no_proxy -u NO_PROXY "$SCRIPTS/lang/ruby.sh" app/thirteen.rb
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  [ ! -e "$marker" ] || fail "rubocop fetched the remote inherit_from"
+  assert_exit 1
+  assert_contains "$OUT" "Huge#run${TAB}cyclomatic${TAB}13${TAB}8${TAB}skill default"
+}
