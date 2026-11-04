@@ -1,0 +1,125 @@
+# Tests for scripts/lang/lizard.sh
+#
+# Fixture scores (cognitive, last CSV column) verified with:
+#   lizard -Ecognitive --csv fixtures/cognitive/<dir>/<name>.<ext>
+# at_limit.* = 15, over.* = 16, one method "risky" in each of ruby/ts/py/go/rs.
+
+LIZARD_SH="$SCRIPTS/lang/lizard.sh"
+
+lizard_cache() {
+  local cache="$TEST_CACHE/joadtor/complexity-check"
+  mkdir -p "$cache"
+  [ -x "$cache/bin/lizard" ] || (cd "$cache" && UV_TOOL_DIR="$cache/uv" UV_TOOL_BIN_DIR="$cache/bin" \
+    uv tool install --no-config --default-index https://pypi.org/simple lizard==1.24.3) >/dev/null 2>&1
+  [ -x "$cache/bin/lizard" ] || fail "could not install lizard into the test cache"
+}
+
+lizard_repo() {
+  need_net; lizard_cache
+  local r; r="$(fixture)"
+  echo "$r"
+}
+
+lizard_limit() { (cd "$1" && . "$SCRIPTS/_common.sh" && default_limit "$2"); }
+
+lizard_over() { # <lang> <dir> <ext> <line> [function]
+  local r; r="$(lizard_repo)" || exit $?
+  copy_fixture "$r" "cognitive/$2/over.$3" "src/over.$3"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" "src/over.$3"
+  assert_exit 1
+  assert_eq "$OUT" "$(printf 'src/over.%s:%s\t%s\t%s\tcognitive\t16\t%s\tskill default' "$3" "$4" "$1" "${5:-risky}" "$(lizard_limit "$r" "$1")")"
+}
+
+t_lizard_over_ruby() { lizard_over ruby ruby rb 2; }
+t_lizard_over_js() { lizard_over js ts ts 2; }
+t_lizard_over_python() { lizard_over python py py 2; }
+t_lizard_over_go() { lizard_over go go go 5 Risky; }
+t_lizard_over_rust() { lizard_over rust rs rs 4; }
+
+t_lizard_at_limit_passes() {
+  local r; r="$(lizard_repo)" || exit $?
+  copy_fixture "$r" cognitive/ruby/at_limit.rb src/a.rb
+  copy_fixture "$r" cognitive/ts/at_limit.ts src/a.ts
+  copy_fixture "$r" cognitive/py/at_limit.py src/a.py
+  copy_fixture "$r" cognitive/go/at_limit.go src/a.go
+  copy_fixture "$r" cognitive/rs/at_limit.rs src/a.rs
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/a.rb src/a.ts src/a.py src/a.go src/a.rs
+  assert_eq "$OUT" ""
+  assert_exit 0
+}
+
+t_lizard_missing() {
+  local r; r="$(fixture)"
+  copy_fixture "$r" cognitive/ruby/over.rb src/over.rb
+  run_in "$r" env PATH=/usr/bin:/bin XDG_CACHE_HOME="$TEST_TMP/empty-cache" "$LIZARD_SH" src/over.rb
+  assert_exit 3
+  assert_eq "$ERR" "lizard not installed"
+}
+
+lizard_stub_bin() { # records every call of network-y tools, never runs them; git passes through
+  local bin="$TEST_TMP/stubs" t real
+  mkdir -p "$bin" "$TEST_TMP/markers"
+  for t in curl wget pip pip3 uv npm gem go; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\nexit 1\n' "$t" "$TEST_TMP" > "$bin/$t"
+    chmod +x "$bin/$t"
+  done
+  real="$(command -v git)"
+  printf '#!/bin/sh\necho "git $*" >> "%s/calls"\nexec "%s" "$@"\n' "$TEST_TMP" "$real" > "$bin/git"
+  chmod +x "$bin/git"
+  echo "$bin"
+}
+
+lizard_traps() { # plant python files that write a marker when imported
+  local r="$1" m="$TEST_TMP/markers" n
+  for n in lizard_ext/__init__ lizard_ext/lizardcognitive lizardcognitive json sitecustomize usercustomize; do
+    add_file "$r" "$n.py" "open('$m/$(echo "$n" | tr / _)', 'w').close()"
+  done
+  add_file "$r" trap.pth "import os; open('$m/pth', 'w').close()"
+}
+
+lizard_snapshot() {
+  (cd "$1" && find . -path ./.git -prune -o -print | sort | while IFS= read -r p; do
+    if [ -f "$p" ]; then cksum "$p"; else echo "$p"; fi
+  done)
+}
+
+t_lizard_never_interferes() {
+  local r bin before after
+  r="$(lizard_repo)" || exit $?
+  copy_fixture "$r" cognitive/ruby/over.rb src/over.rb
+  copy_fixture "$r" cognitive/ts/over.ts src/over.ts
+  copy_fixture "$r" cognitive/py/over.py src/over.py
+  copy_fixture "$r" cognitive/go/over.go src/over.go
+  copy_fixture "$r" cognitive/rs/over.rs src/over.rs
+  lizard_traps "$r"
+  add_file "$r" .gitignore "*.log"
+  add_file "$r" x.log "ignored"
+  bin="$(lizard_stub_bin)"
+  before="$(lizard_snapshot "$r")"
+  run_in "$r" env PATH="$bin:$PATH" XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" \
+    src/over.rb src/over.ts src/over.py src/over.go src/over.rs
+  assert_exit 1
+  assert_eq "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" 5 "all five offenders reported"
+  after="$(lizard_snapshot "$r")"
+  assert_eq "$after" "$before" "project files changed"
+  assert_eq "$(ls "$TEST_TMP/markers")" "" "a planted file was imported"
+  assert_eq "$(grep -E '^(curl|wget|pip|pip3|uv|npm|gem|go) |^git (fetch|clone|ls-remote|pull|push)' "$TEST_TMP/calls" 2>/dev/null)" "" "network-y call"
+}
+
+# lizard exits 0 with no output and no warning on broken input, so the script cross-checks files with no
+# functions using the language's own read-only syntax check.
+t_lizard_unparsable_reported() {
+  skip_unless_cmd ruby
+  local r; r="$(lizard_repo)" || exit $?
+  add_file "$r" src/broken.rb - <<'RB'
+class Broken
+  def risky(x)
+    if x
+      1
+  end
+RB
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/broken.rb
+  assert_exit 2
+  assert_contains "$ERR" "complexity: src/broken.rb could not be parsed — unchecked"
+  assert_eq "$OUT" ""
+}
