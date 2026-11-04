@@ -65,10 +65,10 @@ python
 go
 rust"
   _common "$r" 'for l in ruby js python go rust; do echo "$(default_limit $l)"; done'
-  assert_eq "$OUT" "8
-10
-10
-10
+  assert_eq "$OUT" "15
+15
+15
+15
 15"
 }
 

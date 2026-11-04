@@ -8,13 +8,17 @@
 #
 # Language-script contract — lang/<lang>.sh <file>..., run from the repo root
 #   (dir overridable with COMPLEXITY_CHECK_LANG_DIR). A script may source ../_common.sh and owns its own
-#   limit precedence: the project's config if any, else default_limit.
+#   limit precedence: the project's own configured cognitive tool if any, else it exits 4.
 #   stdout  one offender per line, TAB-separated, 7 fields:
-#           file:line  lang  function  metric  score  limit  source   (source: where the limit came from,
-#           e.g. "skill default", ".rubocop.yml")
+#           file:line  lang  function  metric  score  limit  source   (metric is always "cognitive";
+#           source: where the limit came from, e.g. "skill default", ".rubocop.yml")
 #   stderr  notices to pass through (e.g. "project .rubocop.yml bypassed")
 #   exit    0 nothing over · 1 offenders printed · 3 tool missing (first stderr line = reason)
+#           · 4 the project has no configured cognitive tool of its own -> check.sh sends that
+#             language's files to lang/lizard.sh, which follows this same contract (without 4)
 #           · anything else = the tool failed
+#   A language with no lang/<lang>.sh goes straight to lang/lizard.sh; if that is missing or not
+#   executable the language is skipped ("not supported").
 #
 # stdout: the offender lines, unchanged.
 # stderr: language notices; one "skipped <Lang> (<reason>) — unchecked: <files>" per skipped language; a summary.
@@ -32,6 +36,30 @@ pretty() {
 over=0 skipped=0
 skip() { skipped=$((skipped + 1)); echo "complexity: skipped $(pretty "$1") ($2) — unchecked: $3" >&2; }
 
+# run_script <script> <file>... — sets status, out, reason; forwards the script's notices
+run_script() {
+  local script=$1 errf; shift
+  if [ ! -x "$script" ]; then status=3 out="" reason="not supported"; return; fi
+  errf=$(mktemp "${TMPDIR:-/tmp}/cc-err.XXXXXX")
+  out=$("$script" "$@" 2>"$errf"); status=$?
+  reason=$(head -n 1 "$errf")
+  [ $status -ne 3 ] && [ -s "$errf" ] && cat "$errf" >&2
+  rm -f "$errf"
+}
+
+# finish <lang> <file>... — reports the last run_script result
+finish() {
+  local lang=$1; shift
+  case $status in
+    0|1) [ -n "$out" ] && { printf '%s\n' "$out"; over=$((over + $(printf '%s\n' "$out" | wc -l))); } ;;
+    3)   case $reason in
+           *"not found"*|*"not installed"*|*"not available"*) skip "$lang" "$reason — run setup" "$*" ;;
+           *) skip "$lang" "${reason:-no tool}" "$*" ;;
+         esac ;;
+    *)   skip "$lang" "tool failed, exit $status" "$*" ;;
+  esac
+}
+
 files=$(target_files "$@") || exit 2
 for lang in ruby js python go rust; do
   list=$(while IFS= read -r f; do
@@ -45,23 +73,13 @@ EOF2
   while IFS= read -r f; do set -- "$@" "$f"; done <<EOF2
 $list
 EOF2
-  if [ ! -x "$LANG_DIR/$lang.sh" ]; then
-    skip "$lang" "not supported" "$*"
-    continue
+  script="$LANG_DIR/$lang.sh"
+  [ -x "$script" ] || script="$LANG_DIR/lizard.sh"
+  run_script "$script" "$@"
+  if [ $status -eq 4 ]; then
+    run_script "$LANG_DIR/lizard.sh" "$@"
   fi
-  errf=$(mktemp "${TMPDIR:-/tmp}/cc-err.XXXXXX")
-  out=$("$LANG_DIR/$lang.sh" "$@" 2>"$errf"); status=$?
-  reason=$(head -n 1 "$errf")
-  [ $status -ne 3 ] && [ -s "$errf" ] && cat "$errf" >&2
-  rm -f "$errf"
-  case $status in
-    0|1) [ -n "$out" ] && { printf '%s\n' "$out"; over=$((over + $(printf '%s\n' "$out" | wc -l))); } ;;
-    3)   case $reason in
-           *"not found"*|*"not installed"*|*"not available"*) skip "$lang" "$reason — run setup" "$*" ;;
-           *) skip "$lang" "${reason:-no tool}" "$*" ;;
-         esac ;;
-    *)   skip "$lang" "tool failed, exit $status" "$*" ;;
-  esac
+  finish "$lang" "$@"
 done
 
 note=""

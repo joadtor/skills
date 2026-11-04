@@ -103,3 +103,68 @@ t_check_relative_paths_from_subdirectory() {
   COMPLEXITY_CHECK_LANG_DIR="$LD" run_in "$r/app" "$SCRIPTS/check.sh" "$(cd "$r" && pwd -P)/lib/b.rb"
   assert_contains "$ERR" "args: lib/b.rb"
 }
+
+t_check_falls_back_to_lizard() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" cmd/a.go "x"; add_file "$r" cmd/b.go "x"; add_file "$r" app/c.rb "x"; commit_all "$r"
+  stub "$LD" go 'exit 4'
+  stub "$LD" ruby 'exit 0'
+  stub "$LD" lizard 'echo "lizard: $*" >&2; exit 0'
+  check "$r"
+  assert_exit 0
+  assert_contains "$ERR" "lizard: cmd/a.go cmd/b.go"
+  assert_not_contains "$ERR" "c.rb"
+  assert_not_contains "$ERR" "skipped"
+}
+
+t_check_own_tool_skips_lizard() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" cmd/a.go "x"; commit_all "$r"
+  stub "$LD" go 'exit 0'
+  stub "$LD" lizard "echo called > \"$LD/lizard-called\"; exit 0"
+  check "$r"
+  assert_exit 0
+  [ ! -e "$LD/lizard-called" ] || fail "lizard.sh ran although go.sh found its own tool"
+}
+
+t_check_no_lang_script_uses_lizard() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" app/a.rb "x"; add_file "$r" app/b.rb "x"; commit_all "$r"
+  stub "$LD" lizard 'echo "lizard: $*" >&2; exit 0'
+  check "$r"
+  assert_exit 0
+  assert_contains "$ERR" "lizard: app/a.rb app/b.rb"
+  assert_not_contains "$ERR" "skipped"
+}
+
+t_check_lizard_offenders_pass_through() {
+  local r line; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" cmd/a.go "x"; commit_all "$r"
+  line="cmd/a.go:3	go	main	cognitive	16	15	skill default"
+  stub "$LD" go 'exit 4'
+  stub "$LD" lizard "printf '%s\\n' '$line'; exit 1"
+  check "$r"
+  assert_exit 1
+  assert_eq "$OUT" "$line"
+  assert_contains "$ERR" "complexity: 1 function(s) over the limit"
+}
+
+t_check_lizard_missing_is_a_skip() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" cmd/a.go "x"; commit_all "$r"
+  stub "$LD" go 'exit 4'
+  stub "$LD" lizard 'echo "lizard not installed" >&2; exit 3'
+  check "$r"
+  assert_exit 0
+  assert_contains "$ERR" "skipped Go (lizard not installed — run setup)"
+  assert_contains "$ERR" "cmd/a.go"
+}
+
+t_check_lizard_absent_after_own_tool_exit_4() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" cmd/a.go "x"; commit_all "$r"
+  stub "$LD" go 'exit 4'
+  check "$r"
+  assert_exit 0
+  assert_contains "$ERR" "skipped Go (not supported)"
+}

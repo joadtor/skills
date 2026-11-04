@@ -68,9 +68,7 @@ lang_of() {
 
 default_limit() {
   case "$1" in
-    ruby) echo 8 ;;
-    js|python|go) echo 10 ;;
-    rust) echo 15 ;;
+    ruby|js|python|go|rust) echo 15 ;;
   esac
 }
 
