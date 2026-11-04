@@ -107,3 +107,56 @@ t_setup_cached_tool_reused() {
   assert_exit 0
   assert_eq "$OUT" ""
 }
+
+t_setup_plan_no_base_branch_is_an_error() {
+  local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s"
+  (cd "$r" && git remote remove origin) >/dev/null 2>&1
+  add_file "$r" app/a.rb "class A; end"; commit_all "$r"
+  _setup "$r" "$s" "$(mktmp)" plan
+  assert_exit 2
+  assert_contains "$ERR" "can't find the base branch on origin"
+}
+
+t_setup_plan_languages_from_path_arguments() {
+  local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s" go
+  _setup "$r" "$s" "$(mktmp)" plan src/new_service.go
+  assert_exit 0
+  assert_contains "$OUT" "gocyclo"
+}
+
+t_setup_plan_eslint_without_cached_parser() {
+  local r s c; r="$(fixture)"; s="$(mktmp)/bin"; c="$(mktmp)/cache"; stub_path "$s" eslint
+  add_file "$r" web/a.ts "x"; commit_all "$r"
+  _setup "$r" "$s" "$c" plan
+  assert_exit 0
+  assert_contains "$OUT" "eslint"
+  mkdir -p "$c/joadtor/complexity-check/node/node_modules/typescript-eslint/dist"
+  : > "$c/joadtor/complexity-check/node/node_modules/typescript-eslint/dist/index.js"
+  _setup "$r" "$s" "$c" plan
+  assert_eq "$OUT" ""
+}
+
+t_setup_plan_old_ruby_is_runtime_missing() {
+  local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s" gem ruby
+  printf '#!/bin/sh\nexit 1\n' > "$s/ruby"
+  add_file "$r" app/a.rb "x"; commit_all "$r"
+  _setup "$r" "$s" "$(mktmp)" plan
+  assert_contains "$OUT" "install Ruby >= 2.7 first"
+  assert_contains "$OUT" "runtime-missing"
+  printf '#!/bin/sh\nexit 0\n' > "$s/ruby"
+  _setup "$r" "$s" "$(mktmp)" plan
+  assert_not_contains "$OUT" "runtime-missing"
+  assert_contains "$OUT" "rubocop"
+}
+
+t_setup_plan_old_node_is_runtime_missing() {
+  local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s" npm node
+  printf '#!/bin/sh\nexit 1\n' > "$s/node"
+  add_file "$r" web/a.ts "x"; commit_all "$r"
+  _setup "$r" "$s" "$(mktmp)" plan
+  assert_contains "$OUT" "install Node >= 20.19 first"
+  assert_contains "$OUT" "runtime-missing"
+  printf '#!/bin/sh\nexit 0\n' > "$s/node"
+  _setup "$r" "$s" "$(mktmp)" plan
+  assert_not_contains "$OUT" "runtime-missing"
+}

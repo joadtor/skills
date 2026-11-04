@@ -5,11 +5,35 @@
 
 default=$(default_limit ruby)
 export DEFAULT=$default
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-ruby.XXXXXX") || exit 2
+trap 'rm -rf "$tmp"' EXIT
+
+run=$(resolve rubocop)
+[ -z "$run" ] && { echo "rubocop not found" >&2; exit 3; }
+
+# A Max set in a file the project config inherits (inherit_from) only shows in rubocop's merged config.
+# Built-in defaults are read too, so a merged value equal to the default isn't mistaken for a project setting.
+COPS=Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity
+export MERGED="" DEFAULTS=""
+if grep -Eq '^inherit_(from|gem)' .rubocop.yml 2>/dev/null; then
+  MERGED=$($run --show-cops "$COPS" 2>/dev/null) || MERGED=""
+  : > "$tmp/empty.yml"
+  [ -n "$MERGED" ] && { DEFAULTS=$(cd "$tmp" && $run -c "$tmp/empty.yml" --show-cops "$COPS" 2>/dev/null) || MERGED=""; }
+fi
+
 IFS=$'\t' read -r CYC_LIMIT CYC_SRC PERC_LIMIT PERC_SRC <<EOF2
 $(ruby -ryaml -e '
   cfg = File.exist?(".rubocop.yml") ? (YAML.safe_load(File.read(".rubocop.yml"), aliases: true) || {}) : {}
+  cops = lambda do |text|
+    start = text.index(/^Metrics\/(Cyclomatic|Perceived)Complexity:$/)
+    start ? (YAML.safe_load(text[start..-1], aliases: true) rescue {}) || {} : {}
+  end
+  merged, defaults = cops.call(ENV["MERGED"]), cops.call(ENV["DEFAULTS"])
   row = ["Metrics/CyclomaticComplexity", "Metrics/PerceivedComplexity"].flat_map do |cop|
     max = (cfg[cop] || {})["Max"]
+    inherited = (merged[cop] || {})["Max"]
+    max = inherited if max.nil? && inherited != (defaults[cop] || {})["Max"]
     disabled = (cfg[cop] || {})["Enabled"] == false || (cfg["Metrics"] || {})["Enabled"] == false
     [max.nil? ? "-" : max.to_s, disabled ? "disabled" : "enabled"]
   end
@@ -29,9 +53,6 @@ for k in CYC PERC; do
 done
 export CYC_LIMIT CYC_SRC PERC_LIMIT PERC_SRC
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-ruby.XXXXXX") || exit 2
-trap 'rm -rf "$tmp"' EXIT
-
 write_config() {
   {
     [ "$1" = inherit ] && printf 'inherit_from: %s\n' "$PWD/.rubocop.yml"
@@ -46,8 +67,6 @@ EOF2
   } > "$tmp/rubocop.yml"
 }
 
-run=$(resolve rubocop)
-[ -z "$run" ] && { echo "rubocop not found" >&2; exit 3; }
 run_rubocop() {
   $run -c "$tmp/rubocop.yml" --only Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity \
     --format json --force-exclusion "$@" > "$tmp/out.json" 2> "$tmp/err"

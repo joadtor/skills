@@ -107,3 +107,35 @@ t_common_broken_path_shim_ignored() {
   run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH="$shims:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve eslint"
   assert_eq "$OUT" "" "a version-manager shim that can't run is not a tool"
 }
+
+t_common_base_branch_local_ref_no_network() {
+  local r; r="$(fixture)"
+  (cd "$r" && git push -q origin main:trunk &&
+    git --git-dir="$(git remote get-url origin)" symbolic-ref HEAD refs/heads/trunk &&
+    git push -q origin --delete main &&
+    git fetch -q --prune origin && git remote set-head origin trunk) >/dev/null 2>&1
+  run_in "$r" env GIT_TRACE=1 bash -c ". \"$SCRIPTS/_common.sh\"; base_branch"
+  assert_eq "$OUT" "trunk"
+  assert_not_contains "$ERR" "upload-pack"
+  assert_not_contains "$ERR" "remote-curl"
+}
+
+t_common_pytest_files_skipped() {
+  local r; r="$(fixture)"
+  add_file "$r" app/test_orders.py "x"
+  add_file "$r" app/keep.py "x"
+  commit_all "$r" "py"
+  _common "$r" target_files
+  assert_eq "$OUT" "app/keep.py"
+}
+
+t_common_working_gocyclo_on_path_is_used() {
+  local r bin cache; r="$(fixture)"; bin="$TEST_TMP/gobin"; cache="$TEST_TMP/emptycache"
+  [ -x "$TEST_CACHE/joadtor/complexity-check/bin/gocyclo" ] || {
+    need_net
+    XDG_CACHE_HOME="$TEST_CACHE" "$SCRIPTS/setup.sh" install gocyclo >/dev/null 2>&1 || fail "gocyclo install failed"
+  }
+  mkdir -p "$bin"; ln -s "$TEST_CACHE/joadtor/complexity-check/bin/gocyclo" "$bin/gocyclo"
+  run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve gocyclo"
+  assert_eq "$OUT" "gocyclo" "gocyclo has no --version, but a working one on PATH must be used"
+}

@@ -28,6 +28,8 @@ present() {
   case "$1" in
     # From / so a project rust-toolchain.toml can't make rustup install a toolchain before consent.
     clippy) have cargo && (cd / && cargo clippy --version) >/dev/null 2>&1 ;;
+    # Without a project eslint, js.sh imports the parser from the cache, so the tool alone isn't enough.
+    eslint) [ -n "$(resolve eslint)" ] && { [ -x node_modules/.bin/eslint ] || [ -f "$CACHE/node/node_modules/typescript-eslint/dist/index.js" ]; } ;;
     *) [ -n "$(resolve "$1")" ] ;;
   esac
 }
@@ -54,9 +56,18 @@ method_for() {
   esac
 }
 
+# Probed from the cache dir (or /), so a project's .ruby-version/.node-version can't answer for the runtime a cache install would use.
+runtime_too_old() {
+  case "$1" in
+    rubocop) have ruby && ! (cd "$CACHE" 2>/dev/null || cd /; ruby -e 'exit(Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("2.7") ? 0 : 1)') 2>/dev/null && echo "Ruby >= 2.7" ;;
+    eslint)  have node && ! (cd "$CACHE" 2>/dev/null || cd /; node -e 'const v = process.versions.node.split(".").map(Number); process.exit(v[0] >= 24 || (v[0] === 22 && v[1] >= 13) || (v[0] === 20 && v[1] >= 19) ? 0 : 1)') 2>/dev/null && echo "Node >= 20.19" ;;
+  esac
+}
+
 plan() {
-  local lang tool rt missing scope method name
-  target_files "$@" | while IFS= read -r f; do lang_of "$f"; done | sort -u | while IFS= read -r lang; do
+  local lang tool rt missing scope method name files a old
+  files=$(target_files "$@") || return 2
+  { printf '%s\n' "$files"; for a in "$@"; do printf '%s\n' "$a"; done; } | while IFS= read -r f; do lang_of "$f"; done | sort -u | while IFS= read -r lang; do
     [ -n "$lang" ] || continue
     tool=$(tool_for "$lang")
     present "$tool" && continue
@@ -65,6 +76,8 @@ plan() {
     scope=cache; [ "$tool" = clippy ] && scope=global-toolchain
     method=$(method_for "$tool")
     [ -n "$missing" ] && { scope=runtime-missing; method="install $missing first"; }
+    old=$(runtime_too_old "$tool")
+    [ -z "$missing" ] && [ -n "$old" ] && { scope=runtime-missing; method="install $old first"; }
     printf '%s\t%s\t%s\t%s\t%s\n' "$lang" "$tool" "$(version_of "$tool")" "$method" "$scope"
   done
 }
@@ -107,7 +120,7 @@ install() {
 }
 
 case "${1:-}" in
-  plan)    shift; plan "$@" ;;
+  plan)    shift; plan "$@"; exit $? ;;
   install) shift; install "$@" ;;
   *) echo "usage: setup.sh plan [path...] | install <tool>..." >&2; exit 2 ;;
 esac

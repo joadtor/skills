@@ -31,7 +31,7 @@ pretty() {
 over=0 skipped=0
 skip() { skipped=$((skipped + 1)); echo "complexity: skipped $(pretty "$1") ($2) — unchecked: $3" >&2; }
 
-files=$(target_files "$@")
+files=$(target_files "$@") || exit 2
 for lang in ruby js python go rust; do
   list=$(while IFS= read -r f; do
     [ -n "$f" ] && [ "$(lang_of "$f")" = "$lang" ] && printf '%s\n' "$f"
@@ -48,10 +48,17 @@ EOF2
     skip "$lang" "not supported" "$*"
     continue
   fi
-  out=$("$LANG_DIR/$lang.sh" "$@"); status=$?
+  errf=$(mktemp "${TMPDIR:-/tmp}/cc-err.XXXXXX")
+  out=$("$LANG_DIR/$lang.sh" "$@" 2>"$errf"); status=$?
+  reason=$(head -n 1 "$errf")
+  [ $status -ne 3 ] && [ -s "$errf" ] && cat "$errf" >&2
+  rm -f "$errf"
   case $status in
     0|1) [ -n "$out" ] && { printf '%s\n' "$out"; over=$((over + $(printf '%s\n' "$out" | wc -l))); } ;;
-    3)   skip "$lang" "no tool — run setup" "$*" ;;
+    3)   case $reason in
+           *"not found"*|*"not installed"*|*"not available"*) skip "$lang" "$reason — run setup" "$*" ;;
+           *) skip "$lang" "${reason:-no tool}" "$*" ;;
+         esac ;;
     *)   skip "$lang" "tool failed, exit $status" "$*" ;;
   esac
 done

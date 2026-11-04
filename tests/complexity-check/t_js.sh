@@ -100,3 +100,12 @@ t_js_tool_missing() {
   assert_exit 3
   assert_contains "$(printf '%s\n' "$ERR" | head -n 1)" "eslint"
 }
+
+t_js_path_eslint_without_cached_parser() {
+  local r bin; r="$(fixture)"; bin="$(mktmp)"
+  printf '#!/bin/sh\nexit 0\n' > "$bin/eslint"; chmod +x "$bin/eslint"
+  add_file "$r" src/a.ts "x"; commit_all "$r"
+  run_in "$r" env PATH="$bin:/usr/bin:/bin" XDG_CACHE_HOME="$(mktmp)" "$SCRIPTS/lang/js.sh" src/a.ts
+  assert_exit 3
+  assert_contains "$ERR" "typescript-eslint parser not installed"
+}

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Rust: clippy::cognitive_complexity. Usage: rust.sh <file>... (from the repo root; see check.sh for the contract)
+# Only a crate whose Cargo.toml is at the repo root is checked; crates in subfolders are not supported.
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
 
-[ -f Cargo.toml ] || { echo "no Cargo.toml" >&2; exit 3; }
+# Never download: no crates (CARGO_NET_OFFLINE) and no toolchain (RUSTUP_AUTO_INSTALL=0, e.g. a repo rust-toolchain.toml).
+export CARGO_NET_OFFLINE=true RUSTUP_AUTO_INSTALL=0
+
+[ -f Cargo.toml ] || { echo "no Cargo.toml at the repo root" >&2; exit 3; }
 cargo clippy --version >/dev/null 2>&1 || { echo "cargo clippy not available" >&2; exit 3; }
 
 # No cache busting needed: clippy tracks CLIPPY_CONF_DIR and the clippy.toml contents, so cargo re-checks the crate
@@ -22,9 +26,9 @@ if [ "$source" != clippy.toml ]; then
 fi
 
 out=$(CLIPPY_CONF_DIR="$conf" cargo clippy --quiet --message-format=json -- -W clippy::cognitive_complexity); status=$?
-[ $status -ne 0 ] && exit 2
+[ $status -ne 0 ] && { echo "cargo clippy failed (offline: dependencies must already be in the local cargo registry)" >&2; exit 2; }
 
-hits=$(printf '%s\n' "$out" | python3 -c '
+hits=$(printf '%s\n' "$out" | python3 -I -c '
 import json, re, sys
 limit, source = sys.argv[1], sys.argv[2]
 files = set(sys.argv[3:])

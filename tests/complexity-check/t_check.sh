@@ -79,3 +79,27 @@ t_check_several_paths() {
   assert_contains "$ERR" "args: app/a.rb lib/b.rb"
   assert_not_contains "$ERR" "other/c.rb"
 }
+
+t_check_no_base_branch_is_an_error() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  (cd "$r" && git remote remove origin) >/dev/null 2>&1
+  add_file "$r" app/a.rb "x"; commit_all "$r"
+  stub "$LD" ruby 'printf "app/a.rb:1\truby\tA#f\tcyclomatic\t11\t8\tskill default\n"; exit 1'
+  check "$r"
+  assert_exit 2
+  assert_contains "$ERR" "complexity: can't find the base branch on origin — pass a path or fetch origin"
+  assert_not_contains "$ERR" "complexity: clean"
+}
+
+t_check_relative_paths_from_subdirectory() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" app/c.rb "x"; add_file "$r" c.rb "x"; add_file "$r" lib/b.rb "x"; commit_all "$r"
+  stub "$LD" ruby 'echo "args: $*" >&2; exit 0'
+  COMPLEXITY_CHECK_LANG_DIR="$LD" run_in "$r/app" "$SCRIPTS/check.sh" c.rb
+  assert_contains "$ERR" "args: app/c.rb"
+  COMPLEXITY_CHECK_LANG_DIR="$LD" run_in "$r/app" "$SCRIPTS/check.sh" .
+  assert_contains "$ERR" "args: app/c.rb"
+  assert_not_contains "$ERR" "lib/b.rb"
+  COMPLEXITY_CHECK_LANG_DIR="$LD" run_in "$r/app" "$SCRIPTS/check.sh" "$(cd "$r" && pwd -P)/lib/b.rb"
+  assert_contains "$ERR" "args: lib/b.rb"
+}

@@ -110,3 +110,24 @@ t_ruby_project_tool_preferred() {
   assert_contains "$(cat "$bin/bundle.args" 2>/dev/null)" "exec rubocop"
   assert_contains "$OUT" "Order#total${TAB}cyclomatic${TAB}9${TAB}8"
 }
+
+t_ruby_inherited_max_wins() {
+  skip_unless_cmd rubocop
+  local repo; repo=$(fixture)
+  add_file "$repo" .rubocop.yml "inherit_from: .rubocop_todo.yml"
+  add_file "$repo" .rubocop_todo.yml - <<'EOT'
+Metrics/CyclomaticComplexity:
+  Max: 12
+Metrics/PerceivedComplexity:
+  Max: 12
+EOT
+  copy_fixture "$repo" ruby/eleven.rb app/eleven.rb
+  copy_fixture "$repo" ruby/thirteen.rb app/thirteen.rb
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/ruby.sh" app/eleven.rb
+  assert_exit 0
+  assert_eq "$OUT" ""
+  run_in "$repo" "$SCRIPTS/lang/ruby.sh" app/thirteen.rb
+  assert_exit 1
+  assert_contains "$OUT" "Huge#run${TAB}cyclomatic${TAB}13${TAB}12${TAB}.rubocop.yml"
+}

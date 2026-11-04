@@ -23,6 +23,7 @@ if [ "$run" = node_modules/.bin/eslint ]; then
   $run --rule "complexity: [error, $limit]" --format json "$@" > "$tmp/out.json" 2> "$tmp/err"
 else
   # No project eslint: lint with a config of our own that borrows the parser from the tool cache.
+  [ -f "$CACHE/node/node_modules/typescript-eslint/dist/index.js" ] || { echo "typescript-eslint parser not installed" >&2; exit 3; }
   cat > "$tmp/eslint.config.mjs" <<EOF2
 import tseslint from "file://$CACHE/node/node_modules/typescript-eslint/dist/index.js";
 export default [{

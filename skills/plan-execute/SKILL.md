@@ -65,7 +65,7 @@ Rules the dispatch carries:
 
 ## Running the plan
 
-**Before the first wave, set up the complexity tools** — invoke `complexity-check setup` (the languages come from the file extensions in the plan's task file lists). It's the run's one consent point: the user approves or declines missing tools once, in the main session, and every later check runs offline. Record declined languages in the progress file as unchecked.
+**Before the first wave, set up the complexity tools** — invoke `complexity-check setup`, passing the plan's task file paths (the languages come from their extensions). It's the run's one consent point: the user approves or declines missing tools once, in the main session, and every later check runs offline. Record declined languages in the progress file as unchecked.
 
 Execute **continuously** — wave after wave, no pausing to ask "should I continue?". Decide small ambiguities yourself and log them.
 
