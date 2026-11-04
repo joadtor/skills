@@ -7,6 +7,16 @@
 export CARGO_NET_OFFLINE=true RUSTUP_AUTO_INSTALL=0
 
 [ -f Cargo.toml ] || { echo "no Cargo.toml at the repo root" >&2; exit 3; }
+conf_file=""
+for f in clippy.toml .clippy.toml; do
+  [ -f "$f" ] && grep -q '^[[:space:]]*cognitive-complexity-threshold[[:space:]]*=[[:space:]]*[0-9]' "$f" && { conf_file=$f; break; }
+done
+if [ -z "$conf_file" ]; then
+  awk '/^[[:space:]]*\[/ { in_c = ($0 ~ /^[[:space:]]*\[lints\.clippy\][[:space:]]*(#.*)?$/); next }
+       in_c && /^[[:space:]]*cognitive_complexity[[:space:]]*=/ && !/allow/ { found = 1 }
+       END { exit !found }' Cargo.toml || exit 4
+fi
+
 if ! cargo clippy --version >/dev/null 2>&1; then
   for tf in rust-toolchain.toml rust-toolchain; do
     [ -f "$tf" ] || continue
@@ -20,18 +30,13 @@ fi
 
 # No cache busting needed: clippy tracks CLIPPY_CONF_DIR and the clippy.toml contents, so cargo re-checks the crate
 # when the threshold changes (verified in t_rust_stale_cache). Touching sources or cleaning target/ is not required.
-limit=$(default_limit rust); source="skill default"
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-for f in clippy.toml .clippy.toml; do
-  [ -f "$f" ] || continue
-  n=$(sed -n 's/^[[:space:]]*cognitive-complexity-threshold[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f" | head -n 1)
-  [ -n "$n" ] && { limit=$n; source=clippy.toml; }
-  break
-done
-conf=$PWD
-if [ "$source" != clippy.toml ]; then
-  conf=$tmp
-  printf 'cognitive-complexity-threshold = %s\n' "$limit" > "$tmp/clippy.toml"
+limit=$(default_limit rust); source="skill default"; conf=$PWD
+if [ -n "$conf_file" ]; then
+  limit=$(sed -n 's/^[[:space:]]*cognitive-complexity-threshold[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$conf_file" | head -n 1)
+  source=$conf_file
+else
+  conf=$(mktemp -d); trap 'rm -rf "$conf"' EXIT
+  printf 'cognitive-complexity-threshold = %s\n' "$limit" > "$conf/clippy.toml"
 fi
 
 out=$(CLIPPY_CONF_DIR="$conf" cargo clippy --quiet --message-format=json -- -W clippy::cognitive_complexity); status=$?

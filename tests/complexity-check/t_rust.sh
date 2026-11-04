@@ -1,21 +1,53 @@
 # Tests for scripts/lang/rust.sh (clippy cognitive complexity)
 
+rs_enable_lint() { printf '\n[lints.clippy]\ncognitive_complexity = "warn"\n' >> "$1/Cargo.toml"; }
+
 # One shared cargo target dir for the whole run keeps builds out of the fixture repos.
 rs_repo() {
   local r; r="$(fixture)"
   copy_fixture "$r" rust/Cargo.toml Cargo.toml
+  [ "$2" = plain ] || rs_enable_lint "$r"
   copy_fixture "$r" "rust/$1.rs" src/lib.rs
   commit_all "$r"
   echo "$r"
 }
 rs_run() { local r="$1"; shift; CARGO_TARGET_DIR="$TEST_CACHE/rust-target" run_in "$r" "$SCRIPTS/lang/rust.sh" "$@"; }
 
-t_rust_over_default() {
+t_rust_unconfigured_exits_4() {
+  local r bin; r="$(rs_repo over plain)"; bin="$(mktmp)/bin"; mkdir -p "$bin"
+  printf '#!/bin/sh\necho "$@" >> "%s/calls"\nexit 1\n' "$bin" > "$bin/cargo"; chmod +x "$bin/cargo"
+  PATH="$bin:$PATH" rs_run "$r" src/lib.rs
+  assert_exit 4
+  assert_eq "$OUT" ""
+  [ ! -e "$bin/calls" ] || fail "cargo was invoked: $(cat "$bin/calls")"
+}
+
+t_rust_clippy_toml_project_limit() {
   skip_unless_cmd cargo
-  local r; r="$(rs_repo over)"
+  local r; r="$(rs_repo two_fns plain)"
+  add_file "$r" clippy.toml "cognitive-complexity-threshold = 20"; commit_all "$r"
+  rs_run "$r" src/lib.rs
+  assert_exit 1
+  assert_eq "$OUT" "src/lib.rs:1	rust	score_22	cognitive	22	20	clippy.toml"
+  CARGO_TARGET_DIR="$TEST_CACHE/rust-target" run_in "$r" "$SCRIPTS/check.sh"
+  assert_exit 1
+  assert_eq "$OUT" "src/lib.rs:1	rust	score_22	cognitive	22	20	clippy.toml"
+}
+
+t_rust_cargo_lints_enables_with_default() {
+  skip_unless_cmd cargo
+  local r; r="$(rs_repo over plain)"
+  rs_enable_lint "$r"; commit_all "$r"
   rs_run "$r" src/lib.rs
   assert_exit 1
   assert_eq "$OUT" "src/lib.rs:1	rust	over	cognitive	16	15	skill default"
+}
+
+t_rust_cargo_lint_allow_exits_4() {
+  local r; r="$(rs_repo over plain)"
+  printf '\n[lints.clippy]\ncognitive_complexity = "allow"\n' >> "$r/Cargo.toml"; commit_all "$r"
+  rs_run "$r" src/lib.rs
+  assert_exit 4
 }
 
 t_rust_over_end_to_end() {
@@ -132,6 +164,7 @@ t_rust_pinned_toolchain_without_clippy() {
   local r bin; r="$(fixture)"; bin="$(mktmp)/bin"; mkdir -p "$bin"
   printf '#!/bin/sh\nexit 1\n' > "$bin/cargo"; chmod +x "$bin/cargo"
   copy_fixture "$r" rust/Cargo.toml Cargo.toml
+  rs_enable_lint "$r"
   copy_fixture "$r" rust/over.rs src/lib.rs
   add_file "$r" rust-toolchain.toml '[toolchain]
 channel = "1.60.0"'
