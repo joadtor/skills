@@ -43,9 +43,10 @@ unparsed=0
 for f in "$@"; do
   f=${f#./}
   case "$seen" in *$'\n'"$f"$'\n'*) continue ;; esac
-  p=./$f # a file named -x must not read as an option
+  p=$PWD/$f # absolute: never read as an option, and still valid from $tmp
   case $(lang_of "$f") in
-    ruby)   command -v ruby >/dev/null 2>&1 && ! ruby -c "$p" >/dev/null 2>&1 ;;
+    # Compile the text instead of `ruby -c file`, so the file is never Ruby's script and its shebang switches never apply.
+    ruby)   command -v ruby >/dev/null 2>&1 && ! (cd "$tmp" && ruby --disable-gems -e 'RubyVM::InstructionSequence.compile(File.read(ARGV[0]))' -- "$p") >/dev/null 2>&1 ;;
     python) command -v python3 >/dev/null 2>&1 && ! python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$p" >/dev/null 2>&1 ;;
     go)     command -v gofmt >/dev/null 2>&1 && ! gofmt -e "$p" >/dev/null 2>&1 ;;
     *)      false ;;

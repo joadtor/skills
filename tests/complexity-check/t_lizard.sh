@@ -123,3 +123,27 @@ RB
   assert_contains "$ERR" "complexity: src/broken.rb could not be parsed — unchecked"
   assert_eq "$OUT" ""
 }
+
+t_lizard_syntax_check_runs_no_repo_code() {
+  skip_unless_cmd ruby
+  local r marker; r="$(lizard_repo)" || exit $?; marker="$TEST_TMP/shebang-ran"
+  add_file "$r" evil.rb "File.write('$marker', 'x')"
+  add_file "$r" src/trap.rb - <<RB
+#!/usr/bin/env ruby -r$r/evil.rb
+class Trap
+  def risky(x)
+    if x
+RB
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/trap.rb
+  [ ! -e "$marker" ] || fail "the syntax check loaded code named by the file's shebang"
+  assert_contains "$ERR" "src/trap.rb could not be parsed"
+}
+
+t_lizard_valid_file_without_functions_is_not_unchecked() {
+  skip_unless_cmd ruby
+  local r; r="$(lizard_repo)" || exit $?
+  add_file "$r" src/consts.rb "LIMIT = 15"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH="$(dirname "$(command -v ruby)"):$TEST_CACHE/joadtor/complexity-check/bin:/usr/bin:/bin" "$LIZARD_SH" src/consts.rb
+  assert_exit 0
+  assert_not_contains "$ERR" "could not be parsed"
+}
