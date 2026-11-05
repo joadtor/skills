@@ -138,3 +138,50 @@ YML
   assert_exit 1
   assert_eq "$(cd "$repo" && git status --porcelain --ignored)" "$before"
 }
+
+# go_stub_bin <tool>... — a PATH-first dir of stubs that log their calls to $TEST_TMP/calls
+go_stub_bin() {
+  local d t; d=$(mktmp)
+  for t in "$@"; do printf '#!/bin/sh\necho "%s $@" >> "%s/calls"\nexit 0\n' "$t" "$TEST_TMP" > "$d/$t"; chmod +x "$d/$t"; done
+  echo "$d"
+}
+
+go_enable_gocognit() {
+  add_file "$1" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+YML
+}
+
+t_go_detect_unconfigured_exits_4() {
+  local repo; repo=$(go_repo)
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)"
+  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/go.sh" --detect app/mid.go
+  assert_exit 4
+  assert_eq "$OUT" ""
+}
+
+t_go_detect_configured_but_missing_exits_5() {
+  local repo; repo=$(go_repo)
+  go_enable_gocognit "$repo"
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)"
+  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/go.sh" --detect app/mid.go
+  assert_exit 5
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "golangci-lint (configured in .golangci.yml) is not installed — install the project's dependencies"
+}
+
+t_go_detect_configured_and_runnable_exits_0() {
+  local repo bin; repo=$(go_repo)
+  go_enable_gocognit "$repo"
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)"
+  bin=$(go_stub_bin golangci-lint)
+  run_in "$repo" env PATH="$bin:/usr/bin:/bin" "$SCRIPTS/lang/go.sh" --detect app/mid.go
+  assert_exit 0
+  assert_eq "$(cat "$TEST_TMP/calls")" "golangci-lint --version"
+}

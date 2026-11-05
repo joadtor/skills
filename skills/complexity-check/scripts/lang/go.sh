@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Go complexity: gocognit cognitive complexity, through the project's golangci-lint when its
 # .golangci.yml enables gocognit, else a gocognit on the PATH (limit 15), else exit 4.
-# Usage: go.sh <file>...   (contract: see ../check.sh)
+# Usage: go.sh [--detect] <file>...   (contract: see ../check.sh)
+#   --detect  measure nothing: exit 0 = configured and runnable, 4 = not configured,
+#             5 = configured but golangci-lint is not installed (one stderr line)
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
+
+detect=0
+[ "${1:-}" = --detect ] && { detect=1; shift; }
 
 # Both tools report a function when score > limit (golangci: "(> N)", gocognit: -over N).
 # golangci-lint ignores `go` downloads: GOPROXY=off so it can never fetch a module.
@@ -77,6 +82,7 @@ emit() { # reads JSON on stdin; kind root limit src file...
 if [ -n "$enabled" ]; then
   gl=$(resolve golangci-lint)
   if [ -n "$gl" ]; then
+    [ $detect = 1 ] && exit 0
     command -v python3 >/dev/null 2>&1 || { echo "python3 not found" >&2; exit 3; }
     root=$PWD tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 2
     trap 'rm -rf "$tmp"' EXIT
@@ -110,6 +116,11 @@ fi
 gc=""
 if command -v gocognit >/dev/null 2>&1 && gocognit -h 2>&1 | grep -q 'cognitive complexities'; then gc=gocognit
 elif [ -x "$CACHE/bin/gocognit" ]; then gc="$CACHE/bin/gocognit"
+fi
+if [ $detect = 1 ]; then
+  [ -n "$gc" ] && exit 0
+  [ -n "$enabled" ] && { echo "golangci-lint (configured in $enabled) is not installed — install the project's dependencies" >&2; exit 5; }
+  exit 4
 fi
 [ -z "$gc" ] && exit 4
 command -v python3 >/dev/null 2>&1 || { echo "python3 not found" >&2; exit 3; }

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Python cognitive complexity: the project's own complexipy, when pyproject.toml configures it.
-# Usage: python.sh <file>...   (contract: see ../check.sh)
+# Usage: python.sh [--detect] <file>...   (contract: see ../check.sh)
+#   --detect  measure nothing: exit 0 = configured and runnable, 4 = not configured,
+#             5 = configured but complexipy is not installed (one stderr line)
 #
 # complexipy 8.x: `--output-format gitlab --output <file>` writes the offenders (score > max) as JSON with
 # the start line and "has cognitive complexity N" in the description; the plain json format has no line.
 # It writes complexipy-results.json and .complexipy_cache into the cwd unless --output and --cache-dir
 # point elsewhere, so both go to a temp dir. Exit 1 = offenders found.
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
+
+detect=0
+[ "${1:-}" = --detect ] && { detect=1; shift; }
 
 limit=$(default_limit python)
 src="skill default"
@@ -58,6 +63,11 @@ for c in .venv/bin/complexipy venv/bin/complexipy; do
 done
 if [ -z "$tool" ] && command -v complexipy >/dev/null 2>&1 && complexipy --version >/dev/null 2>&1; then
   tool=complexipy
+fi
+if [ $detect = 1 ]; then
+  [ -n "$tool" ] && exit 0
+  echo "complexipy (configured in pyproject.toml) is not installed — install the project's dependencies" >&2
+  exit 5
 fi
 [ -n "$tool" ] || { echo "complexipy not installed (configured in pyproject.toml)" >&2; exit 3; }
 

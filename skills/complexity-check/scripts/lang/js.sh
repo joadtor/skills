@@ -2,8 +2,13 @@
 # JS/TS cognitive complexity from the project's own tool, ESLint first: eslint-plugin-sonarjs
 # (sonarjs/cognitive-complexity), else Biome (complexity/noExcessiveCognitiveComplexity).
 # Exit 4 when the project has neither configured.
-# Usage: js.sh <file>...   (contract: see ../check.sh)
+# Usage: js.sh [--detect] <file>...   (contract: see ../check.sh)
+#   --detect  measure nothing: exit 0 = configured and runnable, 4 = not configured,
+#             5 = configured but its tool is not installed (one stderr line names it)
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
+
+detect=0
+[ "${1:-}" = --detect ] && { detect=1; shift; }
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-js.XXXXXX") || exit 2
 trap 'rm -rf "$tmp"' EXIT
@@ -21,6 +26,7 @@ eslint_limit() {
 if [ -n "$(local_tool node_modules/.bin/eslint)" ]; then
   configured=$(eslint_limit "$1")
   if [ -n "$configured" ]; then
+    [ $detect = 1 ] && exit 0
     limit=$(default_limit js) src="skill default"
     [ "$configured" != default ] && { limit=$configured; src="eslint config"; }
     node_modules/.bin/eslint --format json "$@" > "$tmp/out.json" 2> "$tmp/err"
@@ -64,6 +70,7 @@ biome_limit() {
 if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
   read -r cfgfile configured <<< "$(biome_limit)"
   if [ -n "$cfgfile" ]; then
+    [ $detect = 1 ] && exit 0
     limit=$(default_limit js) src="skill default"
     [ "$configured" != default ] && { limit=$configured; src=$cfgfile; }
     node_modules/.bin/biome lint --reporter=json "$@" > "$tmp/out.json" 2> "$tmp/err"
@@ -85,6 +92,19 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
     cat "$tmp/offenders"
     [ -s "$tmp/offenders" ] && exit 1
     exit 0
+  fi
+fi
+if [ $detect = 1 ]; then
+  if [ -z "$(local_tool node_modules/.bin/eslint)" ]; then
+    for cfg in eslint.config.* .eslintrc*; do
+      [ -f "$cfg" ] && grep -q 'sonarjs' "$cfg" && { echo "eslint (configured in eslint config) is not installed — install the project's dependencies" >&2; exit 5; }
+    done
+  fi
+  if [ -z "$(local_tool node_modules/.bin/biome)" ]; then
+    for cfg in biome.json biome.jsonc; do
+      [ -f "$cfg" ] && grep -q 'noExcessiveCognitiveComplexity' "$cfg" && ! grep -Eq 'noExcessiveCognitiveComplexity"?[[:space:]]*:[[:space:]]*"off"' "$cfg" &&
+        { echo "biome (configured in $cfg) is not installed — install the project's dependencies" >&2; exit 5; }
+    done
   fi
 fi
 exit 4

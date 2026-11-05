@@ -93,3 +93,40 @@ echo x > '$marker'"
   [ ! -e "$marker" ] || fail "a committed .venv/bin/complexipy was run"
   assert_exit 3
 }
+
+t_python_detect_unconfigured_exits_4() {
+  local repo; repo=$(fixture)
+  copy_fixture "$repo" python/c22.py app/c22.py
+  add_file "$repo" pyproject.toml "[project]
+name = \"x\""
+  commit_all "$repo"
+  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/python.sh" --detect app/c22.py
+  assert_exit 4
+  assert_eq "$OUT" ""
+}
+
+t_python_detect_configured_but_missing_exits_5() {
+  local repo; repo=$(fixture)
+  copy_fixture "$repo" python/c22.py app/c22.py
+  add_file "$repo" pyproject.toml "[tool.complexipy]
+max-complexity-allowed = 20"
+  commit_all "$repo"
+  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/python.sh" --detect app/c22.py
+  assert_exit 5
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexipy (configured in pyproject.toml) is not installed — install the project's dependencies"
+}
+
+t_python_detect_configured_and_runnable_exits_0() {
+  local repo calls; repo=$(fixture); calls="$TEST_TMP/calls"
+  copy_fixture "$repo" python/c22.py app/c22.py
+  add_file "$repo" pyproject.toml "[tool.complexipy]"
+  add_file "$repo" .gitignore ".venv"
+  add_file "$repo" .venv/bin/complexipy "#!/bin/sh
+echo \"\$@\" >> '$calls'"
+  chmod +x "$repo/.venv/bin/complexipy"
+  commit_all "$repo"
+  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/python.sh" --detect app/c22.py
+  assert_exit 0
+  assert_eq "$(cat "$calls")" "--version"
+}

@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Rust: clippy::cognitive_complexity. Usage: rust.sh <file>... (from the repo root; see check.sh for the contract)
+# Rust: clippy::cognitive_complexity. Usage: rust.sh [--detect] <file>... (from the repo root; see check.sh for the contract)
+#   --detect  measure nothing: exit 0 = configured and clippy runnable, 4 = not configured, 5 = configured but clippy is not runnable
 # Only a crate whose Cargo.toml is at the repo root is checked; crates in subfolders are not supported.
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
 
 # Never download: no crates (CARGO_NET_OFFLINE) and no toolchain (RUSTUP_AUTO_INSTALL=0, e.g. a repo rust-toolchain.toml).
 export CARGO_NET_OFFLINE=true RUSTUP_AUTO_INSTALL=0
 
-[ -f Cargo.toml ] || { echo "no Cargo.toml at the repo root" >&2; exit 3; }
+detect=0
+[ "${1:-}" = --detect ] && { detect=1; shift; }
+
+[ -f Cargo.toml ] || { [ $detect = 1 ] && exit 4; echo "no Cargo.toml at the repo root" >&2; exit 3; }
 conf_file=""
 for f in clippy.toml .clippy.toml; do
   [ -f "$f" ] && grep -q '^[[:space:]]*cognitive-complexity-threshold[[:space:]]*=[[:space:]]*[0-9]' "$f" && { conf_file=$f; break; }
@@ -15,6 +19,12 @@ if [ -z "$conf_file" ]; then
   awk '/^[[:space:]]*\[/ { in_c = ($0 ~ /^[[:space:]]*\[lints\.clippy\][[:space:]]*(#.*)?$/); next }
        in_c && /^[[:space:]]*cognitive_complexity[[:space:]]*=/ && !/allow/ { found = 1 }
        END { exit !found }' Cargo.toml || exit 4
+fi
+
+if [ $detect = 1 ]; then
+  cargo clippy --version >/dev/null 2>&1 && exit 0
+  echo "cargo clippy (configured in ${conf_file:-Cargo.toml}) is not installed — install the project's toolchain" >&2
+  exit 5
 fi
 
 if ! cargo clippy --version >/dev/null 2>&1; then

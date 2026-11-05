@@ -104,3 +104,70 @@ touch '$marker'"
   assert_exit 4
   [ ! -e "$marker" ] || fail "a committed tool binary was run"
 }
+
+# js_stub_tool <repo> <tool> <print-config-json> — a git-ignored node_modules/.bin/<tool> stub that logs its calls
+js_stub_tool() {
+  add_file "$1" .gitignore "node_modules"
+  add_file "$1" "node_modules/.bin/$2" "#!/bin/sh
+echo \"\$@\" >> '$1/../calls'
+echo '$3'"
+  chmod +x "$1/node_modules/.bin/$2"
+}
+
+t_js_detect_unconfigured_exits_4() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  add_file "$repo" eslint.config.mjs 'export default [{ rules: { "no-unused-vars": "error" } }];'
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" --detect src/cog22.js
+  assert_exit 4
+  assert_eq "$OUT" ""
+}
+
+t_js_detect_eslint_configured_but_missing_exits_5() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  add_file "$repo" eslint.config.mjs 'import sonarjs from "eslint-plugin-sonarjs";
+export default [{ plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": "error" } }];'
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" --detect src/cog22.js
+  assert_exit 5
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "eslint (configured in eslint config) is not installed — install the project's dependencies"
+}
+
+t_js_detect_eslint_configured_and_runnable_exits_0() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  js_add_cog "$repo"
+  js_stub_tool "$repo" eslint '{"rules":{"sonarjs/cognitive-complexity":["error",20]}}'
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" --detect src/cog22.js
+  assert_exit 0
+  assert_eq "$(cat "$repo/../calls")" "--print-config src/cog22.js"
+}
+
+t_js_detect_biome_configured_but_missing_exits_5() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  add_file "$repo" biome.json '{"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":"error"}}}}'
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" --detect src/cog22.js
+  assert_exit 5
+  assert_eq "$ERR" "biome (configured in biome.json) is not installed — install the project's dependencies"
+}
+
+t_js_detect_biome_configured_and_runnable_exits_0() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  add_file "$repo" biome.json '{"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":"error"}}}}'
+  js_add_cog "$repo"
+  js_stub_tool "$repo" biome ''
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" --detect src/cog22.js
+  assert_exit 0
+  [ ! -e "$repo/../calls" ] || fail "biome was run: $(cat "$repo/../calls")"
+}

@@ -174,3 +174,34 @@ channel = "1.60.0"'
   assert_contains "$ERR" "--toolchain 1.60.0"
   assert_not_contains "$ERR" "run setup"
 }
+
+# rs_stub_cargo <exit-status-of-clippy> — a cargo stub dir that logs its calls
+rs_stub_cargo() {
+  local bin; bin="$(mktmp)/bin"; mkdir -p "$bin"
+  printf '#!/bin/sh\necho "$@" >> "%s/calls"\nexit %s\n' "$bin" "$1" > "$bin/cargo"; chmod +x "$bin/cargo"
+  echo "$bin"
+}
+
+t_rust_detect_unconfigured_exits_4() {
+  local r bin; r="$(rs_repo over plain)"; bin=$(rs_stub_cargo 0)
+  PATH="$bin:$PATH" rs_run "$r" --detect src/lib.rs
+  assert_exit 4
+  assert_eq "$OUT" ""
+  [ ! -e "$bin/calls" ] || fail "cargo was invoked: $(cat "$bin/calls")"
+}
+
+t_rust_detect_configured_but_clippy_missing_exits_5() {
+  local r bin; r="$(rs_repo over plain)"; bin=$(rs_stub_cargo 1)
+  add_file "$r" clippy.toml "cognitive-complexity-threshold = 20"; commit_all "$r"
+  PATH="$bin:$PATH" rs_run "$r" --detect src/lib.rs
+  assert_exit 5
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "cargo clippy (configured in clippy.toml) is not installed — install the project's toolchain"
+}
+
+t_rust_detect_configured_and_runnable_exits_0() {
+  local r bin; r="$(rs_repo over)"; bin=$(rs_stub_cargo 0)
+  PATH="$bin:$PATH" rs_run "$r" --detect src/lib.rs
+  assert_exit 0
+  assert_eq "$(cat "$bin/calls")" "clippy --version"
+}
