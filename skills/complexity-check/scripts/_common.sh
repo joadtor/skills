@@ -81,12 +81,23 @@ probe_tool() {
   esac
 }
 
-# A tool the project installed inside the repo (node_modules/.bin, .venv/bin): echo it if executable and
-# NOT committed — an installed venv or node_modules is never tracked, so a tracked binary was planted.
+# A tool the project installed inside the repo (node_modules/.bin, .venv/bin): echo it only if it is
+# executable, its top directory is gitignored, no part of its path is committed (a committed binary or a
+# committed symlink was planted), and its real path is outside the repo or untracked. Any git error = unsafe.
 local_tool() {
-  [ -x "$1" ] || return 0
-  git ls-files --error-unmatch -- "$1" >/dev/null 2>&1 && return 0
-  echo "$1"
+  local p=$1 pre real rel
+  [ -x "$p" ] || return 0
+  git check-ignore -q -- "${p%%/*}" 2>/dev/null || return 0
+  for pre in "$p" "$(dirname "$p")" "${p%%/*}"; do
+    git ls-files --error-unmatch -- "$pre" >/dev/null 2>&1 && return 0
+  done
+  real=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P) || return 0
+  case $real/ in
+    "$(pwd -P)"/*)
+      rel=${real#"$(pwd -P)"/}
+      [ -n "$(git ls-files -- "$rel" 2>/dev/null)" ] && return 0 ;;
+  esac
+  echo "$p"
 }
 
 resolve() {

@@ -163,3 +163,14 @@ exit 0"
   _common "$r" 'local_tool .venv/bin/complexipy'
   assert_eq "$OUT" ".venv/bin/complexipy"
 }
+
+t_common_tool_under_committed_symlink_never_used() {
+  local r marker; r="$(fixture)"; marker="$TEST_TMP/ran"
+  add_file "$r" tools/.bin/eslint "#!/bin/sh
+touch '$marker'"
+  chmod +x "$r/tools/.bin/eslint"
+  (cd "$r" && ln -s tools node_modules && git add -f tools node_modules && git commit -qm planted) >/dev/null
+  _common "$r" 'local_tool node_modules/.bin/eslint; resolve eslint'
+  assert_eq "$OUT" "" "a tool reached through a committed symlink is never used"
+  [ ! -e "$marker" ] || fail "a committed repo binary was executed"
+}
