@@ -1,88 +1,81 @@
 #!/usr/bin/env bash
-# Python complexity: radon cc cyclomatic complexity.
+# Python cognitive complexity: the project's own complexipy, when pyproject.toml configures it.
 # Usage: python.sh <file>...   (contract: see ../check.sh)
+#
+# complexipy 8.x: `--output-format gitlab --output <file>` writes the offenders (score > max) as JSON with
+# the start line and "has cognitive complexity N" in the description; the plain json format has no line.
+# It writes complexipy-results.json and .complexipy_cache into the cwd unless --output and --cache-dir
+# point elsewhere, so both go to a temp dir. Exit 1 = offenders found.
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
 
 limit=$(default_limit python)
 src="skill default"
 
-# First project config that sets max-complexity wins: ruff (pyproject, ruff.toml), then flake8.
-found=$(python3 -I -c '
-import configparser, os, re, sys
+# Prints "configured" when pyproject.toml has a [tool.complexipy] table, then its integer limit if it sets one.
+cfg=$(python3 -I -c '
+import re
 try:
     import tomllib
 except ImportError:
     tomllib = None
 
-def toml(path, tables):
+def limit_of(v):
+    return str(v) if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else ""
+
+try:
     if tomllib:
-        with open(path, "rb") as fh:
-            data = tomllib.load(fh)
-        for t in tables:
-            node = data
-            for k in t:
-                node = node.get(k, {}) if isinstance(node, dict) else {}
-            if isinstance(node, dict) and "max-complexity" in node:
-                return node["max-complexity"]
-        return None
-    section = None
-    for line in open(path):
-        m = re.match(r"\s*\[([^\]]+)\]", line)
-        if m:
-            section = m.group(1).strip()
-            continue
-        m = re.match(r"\s*max-complexity\s*=\s*(\d+)", line)
-        if m and section in [".".join(t) for t in tables]:
-            return int(m.group(1))
-
-def ini(path):
-    cp = configparser.ConfigParser(interpolation=None)
-    cp.read(path)
-    if cp.has_option("flake8", "max-complexity"):
-        return cp.get("flake8", "max-complexity")
-
-checks = [
-    ("pyproject.toml", lambda p: toml(p, [("tool", "ruff", "lint", "mccabe"), ("tool", "ruff", "mccabe")])),
-    ("ruff.toml", lambda p: toml(p, [("lint", "mccabe"), ("mccabe",)])),
-    (".ruff.toml", lambda p: toml(p, [("lint", "mccabe"), ("mccabe",)])),
-    ("setup.cfg", ini), (".flake8", ini), ("tox.ini", ini),
-]
-for name, fn in checks:
-    if os.path.isfile(name):
-        try:
-            v = fn(name)
-        except Exception:
-            v = None
-        if v is not None:
-            print("%s\t%s" % (int(v), name))
-            break
+        with open("pyproject.toml", "rb") as fh:
+            table = tomllib.load(fh).get("tool", {}).get("complexipy")
+        if isinstance(table, dict):
+            print("configured\t" + limit_of(table.get("max-complexity-allowed")))
+    else:
+        inside = found = False
+        val = ""
+        for line in open("pyproject.toml"):
+            m = re.match(r"\s*\[([^\]]+)\]", line)
+            if m:
+                inside = m.group(1).strip() == "tool.complexipy"
+                found = found or inside
+                continue
+            m = re.match(r"\s*max-complexity-allowed\s*=\s*(\d+)\s*(#.*)?$", line)
+            if inside and m:
+                val = m.group(1)
+        if found:
+            print("configured\t" + val)
+except (OSError, ValueError):
+    pass
 ')
-if [ -n "$found" ]; then
-  limit=${found%%$'\t'*}
-  src=${found#*$'\t'}
+[ -n "$cfg" ] || exit 4
+if [ -n "${cfg#*$'\t'}" ]; then
+  limit=${cfg#*$'\t'}
+  src="pyproject.toml"
 fi
 
-run=$(resolve radon)
-[ -z "$run" ] && { echo "radon not found" >&2; exit 3; }
+tool=""
+for c in .venv/bin/complexipy venv/bin/complexipy; do
+  c=$(local_tool "$c")
+  [ -n "$c" ] && "$c" --version >/dev/null 2>&1 && { tool=$c; break; }
+done
+if [ -z "$tool" ] && command -v complexipy >/dev/null 2>&1 && complexipy --version >/dev/null 2>&1; then
+  tool=complexipy
+fi
+[ -n "$tool" ] || { echo "complexipy not installed (configured in pyproject.toml)" >&2; exit 3; }
 
-out=$($run cc -j "$@") || exit 2
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-py.XXXXXX") || exit 2
+trap 'rm -rf "$tmp"' EXIT
+"$tool" --quiet --isolated --output-format gitlab --output "$tmp/out.json" --cache-dir "$tmp/cache" \
+  --max-complexity-allowed "$limit" "$@" >/dev/null
+st=$?
+[ $st -le 1 ] || exit 2
 
-hits=$(printf '%s\n' "$out" | python3 -I -c '
-import json, sys
-limit, src = int(sys.argv[1]), sys.argv[2]
-seen = set()
-def walk(f, blocks):
-    for b in blocks:
-        if b["type"] != "class" and b["complexity"] > limit:
-            name = b["classname"] + "." + b["name"] if b.get("classname") else b["name"]
-            if (f, b["lineno"], name) not in seen:
-                seen.add((f, b["lineno"], name))
-                print("\t".join(["%s:%d" % (f, b["lineno"]), "python", name, "cyclomatic", str(b["complexity"]), str(limit), src]))
-        walk(f, b.get("methods", []))
-        walk(f, b.get("closures", []))
-for f, blocks in json.load(sys.stdin).items():
-    walk(f, blocks if isinstance(blocks, list) else [])
-' "$limit" "$src") || exit 2
+hits=$(python3 -I -c '
+import json, re, sys
+limit, src = sys.argv[1], sys.argv[2]
+for r in json.load(open(sys.argv[3])):
+    m = re.match(r"Function \x27(.*)\x27 has cognitive complexity (\d+)", r["description"])
+    print("\t".join(["%s:%d" % (r["location"]["path"], r["location"]["lines"]["begin"]), "python",
+                     m.group(1).replace("::", "."), "cognitive", m.group(2), limit, src]))
+' "$limit" "$src" "$tmp/out.json") || exit 2
 
 [ -z "$hits" ] && exit 0
 printf '%s\n' "$hits"
