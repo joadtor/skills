@@ -111,8 +111,17 @@ t_rust_only_given_files() {
   assert_eq "$OUT" "src/other.rs:1	rust	over_twenty	cognitive	21	15	skill default"
 }
 
-t_rust_tool_missing() {
+t_rust_no_cargo_unconfigured_goes_to_lizard() {
   local r; r="$(fixture)"
+  copy_fixture "$r" rust/over.rs src/lib.rs
+  rs_run "$r" src/lib.rs
+  assert_exit 4
+  assert_eq "$OUT" ""
+}
+
+t_rust_configured_without_root_cargo_is_a_skip() {
+  local r; r="$(fixture)"
+  add_file "$r" clippy.toml "cognitive-complexity-threshold = 20"
   copy_fixture "$r" rust/over.rs src/lib.rs
   rs_run "$r" src/lib.rs
   assert_exit 3
@@ -153,6 +162,7 @@ t_rust_subfolder_crate_skip_reason() {
   local r; r="$(fixture)"
   copy_fixture "$r" rust/Cargo.toml crates/x/Cargo.toml
   copy_fixture "$r" rust/over.rs crates/x/src/lib.rs
+  add_file "$r" clippy.toml "cognitive-complexity-threshold = 20"
   commit_all "$r"
   run_in "$r" "$SCRIPTS/check.sh"
   assert_exit 0

@@ -10,16 +10,18 @@ export CARGO_NET_OFFLINE=true RUSTUP_AUTO_INSTALL=0
 detect=0
 [ "${1:-}" = --detect ] && { detect=1; shift; }
 
-[ -f Cargo.toml ] || { [ $detect = 1 ] && exit 4; echo "no Cargo.toml at the repo root" >&2; exit 3; }
+# Not configured → exit 4 (lizard measures it), with or without a Cargo.toml.
 conf_file=""
 for f in clippy.toml .clippy.toml; do
   [ -f "$f" ] && grep -q '^[[:space:]]*cognitive-complexity-threshold[[:space:]]*=[[:space:]]*[0-9]' "$f" && { conf_file=$f; break; }
 done
 if [ -z "$conf_file" ]; then
+  [ -f Cargo.toml ] || exit 4
   awk '/^[[:space:]]*\[/ { in_c = ($0 ~ /^[[:space:]]*\[lints\.clippy\][[:space:]]*(#.*)?$/); next }
        in_c && /^[[:space:]]*cognitive_complexity[[:space:]]*=/ && !/allow/ { found = 1 }
        END { exit !found }' Cargo.toml || exit 4
 fi
+[ -f Cargo.toml ] || { [ $detect = 1 ] && exit 5; echo "no Cargo.toml at the repo root" >&2; exit 3; }
 
 if [ $detect = 1 ]; then
   cargo clippy --version >/dev/null 2>&1 && exit 0
