@@ -11,8 +11,8 @@
 #   limit precedence: the project's own configured cognitive tool if any, else it exits 4.
 #   stdout  one offender per line, TAB-separated, 7 fields:
 #           file:line  lang  function  metric  score  limit  source   (metric is always "cognitive";
-#           source: where the limit came from, e.g. "skill default", ".rubocop.yml")
-#   stderr  notices to pass through (e.g. "project .rubocop.yml bypassed")
+#           source: where the limit came from, e.g. "skill default", "pyproject.toml")
+#   stderr  notices to pass through (e.g. "<file> could not be parsed — unchecked")
 #   exit    0 nothing over · 1 offenders printed · 3 tool missing (first stderr line = reason)
 #           · 4 the project has no configured cognitive tool of its own -> check.sh sends that
 #             language's files to lang/lizard.sh, which follows this same contract (without 4)

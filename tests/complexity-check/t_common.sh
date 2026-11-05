@@ -72,18 +72,21 @@ rust"
 15"
 }
 
-t_common_project_tool_preferred() {
-  local r cache; r="$(fixture)"; cache="$TEST_TMP/xdg"
-  mkdir -p "$cache/joadtor/complexity-check/bin"
-  printf '#!/bin/sh\n' > "$cache/joadtor/complexity-check/bin/rubocop"
-  chmod +x "$cache/joadtor/complexity-check/bin/rubocop"
-  add_file "$r" Gemfile.lock "    rubocop (1.50.2)"
-  run_in "$r" env XDG_CACHE_HOME="$cache" PATH=/usr/bin:/bin bash -c ". \"$SCRIPTS/_common.sh\"; resolve rubocop"
-  assert_eq "$OUT" "bundle exec rubocop"
-  rm "$r/Gemfile.lock"
-  run_in "$r" env XDG_CACHE_HOME="$cache" PATH=/usr/bin:/bin bash -c ". \"$SCRIPTS/_common.sh\"; resolve rubocop"
-  assert_eq "$OUT" "$cache/joadtor/complexity-check/bin/rubocop"
-  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH=/usr/bin:/bin bash -c ". \"$SCRIPTS/_common.sh\"; resolve rubocop"
+t_common_resolve_path_then_cache() {
+  local r cache bin; r="$(fixture)"; cache="$TEST_TMP/xdg"; bin="$TEST_TMP/bin"
+  mkdir -p "$cache/joadtor/complexity-check/bin" "$bin"
+  printf '#!/bin/sh
+exit 0
+' > "$cache/joadtor/complexity-check/bin/lizard"
+  printf '#!/bin/sh
+exit 0
+' > "$bin/lizard"
+  chmod +x "$cache/joadtor/complexity-check/bin/lizard" "$bin/lizard"
+  run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve lizard"
+  assert_eq "$OUT" "lizard" "a working tool on PATH comes before the cache"
+  run_in "$r" env XDG_CACHE_HOME="$cache" PATH=/usr/bin:/bin bash -c ". \"$SCRIPTS/_common.sh\"; resolve lizard"
+  assert_eq "$OUT" "$cache/joadtor/complexity-check/bin/lizard"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH=/usr/bin:/bin bash -c ". \"$SCRIPTS/_common.sh\"; resolve lizard"
   assert_eq "$OUT" ""
 }
 
@@ -129,16 +132,6 @@ t_common_pytest_files_skipped() {
   assert_eq "$OUT" "app/keep.py"
 }
 
-t_common_working_gocyclo_on_path_is_used() {
-  local r bin cache; r="$(fixture)"; bin="$TEST_TMP/gobin"; cache="$TEST_TMP/emptycache"
-  [ -x "$TEST_CACHE/joadtor/complexity-check/bin/gocyclo" ] || {
-    need_net
-    XDG_CACHE_HOME="$TEST_CACHE" "$SCRIPTS/setup.sh" install gocyclo >/dev/null 2>&1 || fail "gocyclo install failed"
-  }
-  mkdir -p "$bin"; ln -s "$TEST_CACHE/joadtor/complexity-check/bin/gocyclo" "$bin/gocyclo"
-  run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve gocyclo"
-  assert_eq "$OUT" "gocyclo" "gocyclo has no --version, but a working one on PATH must be used"
-}
 
 t_common_committed_repo_tool_never_used() {
   local r marker; r="$(fixture)"; marker="$TEST_TMP/ran"

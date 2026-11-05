@@ -73,13 +73,6 @@ default_limit() {
   esac
 }
 
-probe_tool() {
-  local st
-  case "$1" in
-    gocyclo) "$1" -over 1000 /dev/null >/dev/null 2>&1; st=$?; [ $st -le 1 ] ;;
-    *) "$1" --version >/dev/null 2>&1 ;;
-  esac
-}
 
 # A tool the project installed inside the repo (node_modules/.bin, .venv/bin): echo it only if it is
 # executable, its top directory is gitignored, no part of its path is committed (a committed binary or a
@@ -102,12 +95,10 @@ local_tool() {
 
 resolve() {
   case "$1" in
-    rubocop) grep -q ' rubocop (' Gemfile.lock 2>/dev/null && { echo "bundle exec rubocop"; return; } ;;
     eslint)  [ -n "$(local_tool node_modules/.bin/eslint)" ] && { echo node_modules/.bin/eslint; return; } ;;
   esac
   # A version-manager shim (nodenv, rbenv, asdf) is on PATH even when the tool isn't installed — it must run.
-  # gocyclo has no --version: parsing an empty file exits 1 for the real binary, a broken shim exits 126/127.
-  if command -v "$1" >/dev/null 2>&1 && probe_tool "$1"; then echo "$1"
+  if command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; then echo "$1"
   elif [ -x "$CACHE/bin/$1" ]; then echo "$CACHE/bin/$1"
   fi
   return 0
