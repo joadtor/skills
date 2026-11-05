@@ -1,111 +1,106 @@
 # Tests for skills/complexity-check/scripts/lang/js.sh
+#
+# Fixture scores (cognitive): cog22.js = 22 (risky), cog18.js = 18 (steady) per eslint-plugin-sonarjs;
+# Biome counts cog18.js as 19. Both are under a limit of 20.
 TAB=$(printf '\t')
 
-# PATH with node but no eslint (nodenv shims break), cache = the populated test cache.
-js_env() {
-  local bin; bin="$(mktmp)"
-  ln -s "$(node -p process.execPath)" "$bin/node"
-  JS_PATH="$bin:/usr/bin:/bin"
+# js_template <name> <package>... — installs into $TEST_CACHE/<name> once (never the repo, never ~/.cache)
+js_template() {
+  local name="$1"; shift
+  [ -d "$TEST_CACHE/$name/node_modules" ] && return 0
+  need_net; skip_unless_cmd npm
+  mkdir -p "$TEST_CACHE/$name"
+  (cd "$TEST_CACHE/$name" && echo '{"name":"t","private":true}' > package.json &&
+    npm install --no-save --ignore-scripts --registry=https://registry.npmjs.org/ "$@") >/dev/null 2>&1 ||
+    fail "npm install $name failed"
 }
 
-js_cache() {
-  [ -x "$TEST_CACHE/joadtor/complexity-check/bin/eslint" ] && return 0
-  need_net
-  XDG_CACHE_HOME="$TEST_CACHE" "$SCRIPTS/setup.sh" install eslint >/dev/null 2>&1 || fail "setup eslint failed"
-}
+js_eslint_template() { js_template js-eslint-sonarjs eslint@9.39.5 eslint-plugin-sonarjs@4.2.2; }
+js_biome_template()  { js_template js-biome @biomejs/biome@2.6.4; }
 
-js_run() {
-  local repo="$1"; shift
-  run_in "$repo" env PATH="$JS_PATH" XDG_CACHE_HOME="${JS_XDG:-$TEST_CACHE}" "$@"
-}
-
-t_js_over_default_ts() {
-  skip_unless_cmd node
-  js_cache; js_env
+# js_repo <template> — fixture repo whose node_modules is the template's, git-ignored
+js_repo() {
   local repo; repo=$(fixture)
-  copy_fixture "$repo" js/over.ts src/over.ts
-  commit_all "$repo"
-  js_run "$repo" "$SCRIPTS/lang/js.sh" src/over.ts
-  assert_exit 1
-  assert_contains "$OUT" "src/over.ts:1${TAB}js${TAB}total${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
-  js_run "$repo" "$SCRIPTS/check.sh"
-  assert_exit 1
-  assert_contains "$OUT" "total${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
+  ln -s "$TEST_CACHE/$1/node_modules" "$repo/node_modules"
+  printf 'node_modules\n' > "$repo/.gitignore"
+  echo "$repo"
 }
 
-t_js_at_limit_passes() {
+js_add_cog() {
+  copy_fixture "$1" js/cog22.js src/cog22.js
+  copy_fixture "$1" js/cog18.js src/cog18.js
+}
+
+t_js_eslint_sonarjs_project_limit() {
   skip_unless_cmd node
-  js_cache; js_env
-  local repo; repo=$(fixture)
-  copy_fixture "$repo" js/at_limit.ts src/at_limit.ts
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  add_file "$repo" eslint.config.mjs - <<'EOC'
+import sonarjs from "eslint-plugin-sonarjs";
+export default [{ files: ["**/*.js"], plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": ["error", 20] } }];
+EOC
+  js_add_cog "$repo"
   commit_all "$repo"
-  js_run "$repo" "$SCRIPTS/lang/js.sh" src/at_limit.ts
-  assert_exit 0
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}eslint config"
+  run_in "$repo" "$SCRIPTS/check.sh"
+  assert_exit 1
+  assert_contains "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}eslint config"
+  assert_not_contains "$OUT" "skill default"
+  assert_not_contains "$OUT" "cog18"
+}
+
+t_js_biome_project_limit() {
+  skip_unless_cmd node
+  js_biome_template
+  local repo; repo=$(js_repo js-biome)
+  add_file "$repo" biome.json '{"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":{"level":"error","options":{"maxAllowedComplexity":20}}}}}}'
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}biome.json"
+  run_in "$repo" "$SCRIPTS/check.sh"
+  assert_exit 1
+  assert_contains "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}biome.json"
+  assert_not_contains "$OUT" "skill default"
+}
+
+t_js_unconfigured_eslint_exits_4() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  add_file "$repo" eslint.config.mjs 'export default [{ files: ["**/*.js"], rules: { "no-unused-vars": "error" } }];'
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 4
   assert_eq "$OUT" ""
 }
 
-t_js_plain_js() {
+t_js_no_tools_exits_4() {
   skip_unless_cmd node
-  js_cache; js_env
   local repo; repo=$(fixture)
-  copy_fixture "$repo" js/over.js src/over.js
+  js_add_cog "$repo"
   commit_all "$repo"
-  js_run "$repo" "$SCRIPTS/lang/js.sh" src/over.js
-  assert_exit 1
-  assert_contains "$OUT" "src/over.js:1${TAB}js${TAB}total${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 4
+  assert_eq "$OUT" ""
 }
 
-# A project that has its own eslint (symlinked from the test cache) and a config setting complexity.
-js_project() {
-  local repo="$1" rule="$2"
-  mkdir -p "$repo/node_modules/.bin"
-  ln -s "$TEST_CACHE/joadtor/complexity-check/node/node_modules/.bin/eslint" "$repo/node_modules/.bin/eslint"
-  printf 'export default [{ files: ["**/*.js"], rules: { complexity: %s } }];\n' "$rule" > "$repo/eslint.config.mjs"
-  printf 'node_modules\n' > "$repo/.gitignore"
-}
-
-t_js_project_limit_wins() {
+t_js_committed_tool_binary_is_not_run() {
   skip_unless_cmd node
-  js_cache; js_env
-  local repo; repo=$(fixture)
-  js_project "$repo" '["error", 12]'
-  copy_fixture "$repo" js/over.js src/over.js
-  sed 's/function total/function bigger/; s/^  return n;/  if (a[10] > 10) n += 10;\n  if (a[11] > 11) n += 11;\n  return n;/' "$FIXTURES/js/over.js" > "$repo/src/bigger.js"
-  commit_all "$repo"
-  js_run "$repo" "$SCRIPTS/lang/js.sh" src/over.js src/bigger.js
-  assert_exit 1
-  assert_not_contains "$OUT" "src/over.js"
-  assert_contains "$OUT" "src/bigger.js:1${TAB}js${TAB}bigger${TAB}cyclomatic${TAB}13${TAB}12${TAB}eslint config"
-}
-
-t_js_rule_off_uses_default() {
-  skip_unless_cmd node
-  js_cache; js_env
-  local repo; repo=$(fixture)
-  js_project "$repo" '"off"'
-  copy_fixture "$repo" js/over.js src/over.js
-  commit_all "$repo"
-  js_run "$repo" "$SCRIPTS/lang/js.sh" src/over.js
-  assert_exit 1
-  assert_contains "$OUT" "src/over.js:1${TAB}js${TAB}total${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
-}
-
-t_js_tool_missing() {
-  skip_unless_cmd node
-  js_env
-  local repo; repo=$(fixture)
-  copy_fixture "$repo" js/over.js src/over.js
-  commit_all "$repo"
-  JS_XDG="$(mktmp)" js_run "$repo" "$SCRIPTS/lang/js.sh" src/over.js
-  assert_exit 3
-  assert_contains "$(printf '%s\n' "$ERR" | head -n 1)" "eslint"
-}
-
-t_js_path_eslint_without_cached_parser() {
-  local r bin; r="$(fixture)"; bin="$(mktmp)"
-  printf '#!/bin/sh\nexit 0\n' > "$bin/eslint"; chmod +x "$bin/eslint"
-  add_file "$r" src/a.ts "x"; commit_all "$r"
-  run_in "$r" env PATH="$bin:/usr/bin:/bin" XDG_CACHE_HOME="$(mktmp)" "$SCRIPTS/lang/js.sh" src/a.ts
-  assert_exit 3
-  assert_contains "$ERR" "typescript-eslint parser not installed"
+  local repo marker; repo=$(fixture); marker="$repo/ran"
+  add_file "$repo" node_modules/.bin/eslint "#!/bin/sh
+touch '$marker'"
+  add_file "$repo" node_modules/.bin/biome "#!/bin/sh
+touch '$marker'"
+  chmod +x "$repo/node_modules/.bin/eslint" "$repo/node_modules/.bin/biome"
+  add_file "$repo" biome.json '{"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":"error"}}}}'
+  copy_fixture "$repo" js/cog22.js src/cog22.js
+  (cd "$repo" && git add -f -A && git commit -q -m planted) || fail "commit failed"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js
+  assert_exit 4
+  [ ! -e "$marker" ] || fail "a committed tool binary was run"
 }
