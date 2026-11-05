@@ -10,6 +10,7 @@
 #                                 (relative paths are relative to where the script was started)
 #   lang_of <file>       ruby | js | python | go | rust | (empty)
 #   default_limit <lang> per-function complexity ceiling for the language
+#   local_tool <path>    a repo-local tool binary if executable and not committed to git; empty otherwise
 #   resolve <tool>       command to run: project-local, then PATH, then $CACHE/bin; empty if none
 PREFIX=$(git rev-parse --show-prefix) || return 1
 cd "$(git rev-parse --show-toplevel)" || return 1
@@ -80,10 +81,18 @@ probe_tool() {
   esac
 }
 
+# A tool the project installed inside the repo (node_modules/.bin, .venv/bin): echo it if executable and
+# NOT committed — an installed venv or node_modules is never tracked, so a tracked binary was planted.
+local_tool() {
+  [ -x "$1" ] || return 0
+  git ls-files --error-unmatch -- "$1" >/dev/null 2>&1 && return 0
+  echo "$1"
+}
+
 resolve() {
   case "$1" in
     rubocop) grep -q ' rubocop (' Gemfile.lock 2>/dev/null && { echo "bundle exec rubocop"; return; } ;;
-    eslint)  [ -x node_modules/.bin/eslint ] && { echo node_modules/.bin/eslint; return; } ;;
+    eslint)  [ -n "$(local_tool node_modules/.bin/eslint)" ] && { echo node_modules/.bin/eslint; return; } ;;
   esac
   # A version-manager shim (nodenv, rbenv, asdf) is on PATH even when the tool isn't installed — it must run.
   # gocyclo has no --version: parsing an empty file exits 1 for the real binary, a broken shim exits 126/127.

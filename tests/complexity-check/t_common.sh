@@ -139,3 +139,27 @@ t_common_working_gocyclo_on_path_is_used() {
   run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve gocyclo"
   assert_eq "$OUT" "gocyclo" "gocyclo has no --version, but a working one on PATH must be used"
 }
+
+t_common_committed_repo_tool_never_used() {
+  local r marker; r="$(fixture)"; marker="$TEST_TMP/ran"
+  add_file "$r" node_modules/.bin/eslint "#!/bin/sh
+touch '$marker'"
+  add_file "$r" .venv/bin/complexipy "#!/bin/sh
+touch '$marker'"
+  chmod +x "$r/node_modules/.bin/eslint" "$r/.venv/bin/complexipy"
+  (cd "$r" && git add -f node_modules .venv && git commit -qm planted) >/dev/null
+  _common "$r" 'local_tool node_modules/.bin/eslint; local_tool .venv/bin/complexipy; resolve eslint'
+  assert_eq "$OUT" "" "a tool binary committed to the repo is never used"
+  [ ! -e "$marker" ] || fail "a committed repo binary was executed"
+}
+
+t_common_installed_repo_tool_is_used() {
+  local r; r="$(fixture)"
+  add_file "$r" .gitignore ".venv/"
+  add_file "$r" .venv/bin/complexipy "#!/bin/sh
+exit 0"
+  chmod +x "$r/.venv/bin/complexipy"
+  commit_all "$r"
+  _common "$r" 'local_tool .venv/bin/complexipy'
+  assert_eq "$OUT" ".venv/bin/complexipy"
+}
