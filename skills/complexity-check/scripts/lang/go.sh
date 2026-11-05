@@ -86,27 +86,23 @@ if [ -n "$enabled" ]; then
     command -v python3 >/dev/null 2>&1 || { echo "python3 not found" >&2; exit 3; }
     root=$PWD tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 2
     trap 'rm -rf "$tmp"' EXIT
-    pkgs=()
-    for f in "$@"; do pkgs+=("./$(dirname "$f")"); done
-    pkgs=($(printf '%s\n' "${pkgs[@]}" | sort -u))
+    pkgs=() # one ./dir per line, deduplicated without word splitting (dirs may hold spaces or globs)
+    while IFS= read -r d; do pkgs+=("$d"); done < <(for f in "$@"; do printf './%s\n' "$(dirname "$f")"; done | sort -u)
     ver=$($gl --version 2>&1 | sed -n 's/.*version v\{0,1\}\([0-9][0-9]*\)\..*/\1/p' | head -n 1)
-    if [ -n "$configured" ]; then
-      limit=$configured src=$enabled; args=(--enable-only gocognit)
+    # Never the repo's own config: it can load plugins (code). Only its numeric min-complexity is carried over.
+    [ -n "$configured" ] && limit=$configured src=$enabled
+    if [ "$ver" = 1 ]; then
+      printf 'run:\n  relative-path-mode: wd\nlinters:\n  disable-all: true\n  enable:\n    - gocognit\nlinters-settings:\n  gocognit:\n    min-complexity: %s\n' "$limit" > "$tmp/c.yml"
     else
-      # no min-complexity of its own: golangci would use 30, so run it from a config that says 15
-      if [ "$ver" = 1 ]; then
-        printf 'run:\n  relative-path-mode: wd\nlinters:\n  disable-all: true\n  enable:\n    - gocognit\nlinters-settings:\n  gocognit:\n    min-complexity: %s\n' "$limit" > "$tmp/c.yml"
-      else
-        printf 'version: "2"\nlinters:\n  default: none\n  enable:\n    - gocognit\n  settings:\n    gocognit:\n      min-complexity: %s\n' "$limit" > "$tmp/c.yml"
-      fi
-      args=(-c "$tmp/c.yml")
+      printf 'version: "2"\nlinters:\n  default: none\n  enable:\n    - gocognit\n  settings:\n    gocognit:\n      min-complexity: %s\n' "$limit" > "$tmp/c.yml"
     fi
+    args=(-c "$tmp/c.yml")
     if [ "$ver" = 1 ]; then
       args+=(--out-format json)
     else
       args+=(--output.json.path stdout --output.text.path /dev/null --show-stats=false --path-mode abs)
     fi
-    $gl run "${args[@]}" "${pkgs[@]}" >"$tmp/out" 2>"$tmp/err"; status=$?
+    $gl run "${args[@]}" -- "${pkgs[@]}" >"$tmp/out" 2>"$tmp/err"; status=$?
     if [ $status -gt 1 ]; then head -n 3 "$tmp/err" >&2; exit 2; fi
     emit golangci "$root" "$limit" "$src" "$@" <"$tmp/out"; status=$?
     exit $status

@@ -185,3 +185,49 @@ t_go_detect_configured_and_runnable_exits_0() {
   assert_exit 0
   assert_eq "$(cat "$TEST_TMP/calls")" "golangci-lint --version"
 }
+
+t_go_golangci_never_reads_the_repo_config() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+  settings:
+    gocognit:
+      min-complexity: 20
+  exclusions:
+    rules:
+      - path: app/high.go
+        linters:
+          - gocognit
+YML
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/high.go
+  assert_exit 1
+  assert_contains "$OUT" "Total${TAB}cognitive${TAB}22${TAB}20${TAB}.golangci.yml"
+}
+
+t_go_package_dir_with_space() {
+  local repo bin; repo=$(go_repo); bin=$(mktmp)
+  mkdir -p "$repo/app dir"
+  cp "$repo/app/high.go" "$repo/app dir/high.go"
+  go_enable_gocognit "$repo"
+  commit_all "$repo"
+  # a stub golangci-lint that writes each argument on its own line, so a split argument shows
+  printf '#!/bin/sh
+[ "$1" = --version ] && { echo "golangci-lint has version 2.15.0"; exit 0; }
+for a in "$@"; do printf "%%s\n" "$a"; done > "%s/args"
+echo "{}"
+' "$TEST_TMP" > "$bin/golangci-lint"
+  chmod +x "$bin/golangci-lint"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$bin:/usr/bin:/bin:$(dirname "$(command -v python3)")"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" "app dir/high.go"
+  assert_contains "$(cat "$TEST_TMP/args")" "--
+./app dir"
+  assert_not_contains "$(cat "$TEST_TMP/args")" "
+dir
+"
+}
