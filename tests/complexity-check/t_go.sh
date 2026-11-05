@@ -1,91 +1,140 @@
 # Tests for skills/complexity-check/scripts/lang/go.sh
+#
+# Fixture scores (gocognit, a chain of N top-level ifs scores N), verified with:
+#   gocognit -over 0 fixtures/go/cog/app/*.go      # Mid = 18, Total = 22
+# Tools are installed into $TEST_CACHE/go-bin by `go install` (network), never into a repo.
 TAB=$(printf '\t')
 
-go_tool() {
-  [ -x "$TEST_CACHE/joadtor/complexity-check/bin/gocyclo" ] && return 0
+go_tools() {
+  local bin="$TEST_CACHE/go-bin"
+  [ -x "$bin/gocognit" ] && [ -x "$bin/golangci-lint" ] && return 0
   need_net
-  XDG_CACHE_HOME="$TEST_CACHE" "$SCRIPTS/setup.sh" install gocyclo >/dev/null 2>&1 || fail "go_tool: gocyclo install failed"
+  skip_unless_cmd go
+  GOBIN="$bin" go install github.com/uudashr/gocognit/cmd/gocognit@v1.3.0 >/dev/null 2>&1 || fail "go_tools: gocognit install failed"
+  GOBIN="$bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 >/dev/null 2>&1 || fail "go_tools: golangci-lint install failed"
 }
 
-t_go_over_default() {
-  go_tool
+go_repo() {
   local repo; repo=$(fixture)
-  copy_fixture "$repo" go/over.go app/over.go
+  copy_fixture "$repo" go/cog/go.mod go.mod
+  copy_fixture "$repo" go/cog/app/mid.go app/mid.go
+  copy_fixture "$repo" go/cog/app/high.go app/high.go
+  echo "$repo"
+}
+
+# a PATH holding only the named tools from the test cache, plus go and the system
+go_path_with() {
+  local d t; d=$(mktmp)
+  for t in "$@"; do ln -s "$TEST_CACHE/go-bin/$t" "$d/$t"; done
+  echo "$d:$(dirname "$(command -v go)"):/usr/bin:/bin"
+}
+
+t_go_golangci_gocognit_project_limit() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+  settings:
+    gocognit:
+      min-complexity: 20
+YML
   commit_all "$repo"
-  export XDG_CACHE_HOME="$TEST_CACHE"
-  run_in "$repo" "$SCRIPTS/lang/go.sh" app/over.go
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/mid.go app/high.go
   assert_exit 1
-  assert_contains "$OUT" "app/over.go:5${TAB}go${TAB}Total${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
-  assert_contains "$OUT" "${TAB}go${TAB}(*Order).Ship${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
+  assert_eq "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22${TAB}20${TAB}.golangci.yml"
   run_in "$repo" "$SCRIPTS/check.sh"
   assert_exit 1
-  assert_contains "$OUT" "Total${TAB}cyclomatic${TAB}11${TAB}10${TAB}skill default"
+  assert_contains "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22${TAB}20${TAB}.golangci.yml"
+  assert_not_contains "$OUT" "Mid"
 }
 
-t_go_at_limit_passes() {
-  go_tool
-  local repo; repo=$(fixture)
-  copy_fixture "$repo" go/at_limit.go app/at_limit.go
+t_go_golangci_default_limit_when_unset() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+YML
   commit_all "$repo"
-  export XDG_CACHE_HOME="$TEST_CACHE"
-  run_in "$repo" "$SCRIPTS/lang/go.sh" app/at_limit.go
-  assert_exit 0
-  assert_eq "$OUT" ""
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/mid.go app/high.go
+  assert_exit 1
+  assert_contains "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22${TAB}15${TAB}skill default"
+  assert_contains "$OUT" "app/mid.go:3${TAB}go${TAB}Mid${TAB}cognitive${TAB}18${TAB}15${TAB}skill default"
 }
 
-t_go_golangci_v1_limit() {
-  go_tool
-  local repo; repo=$(fixture)
-  copy_fixture "$repo" go/over.go app/over.go
-  copy_fixture "$repo" go/over13.go app/over13.go
+t_go_gocognit_on_path() {
+  go_tools
+  local repo; repo=$(go_repo)
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with gocognit)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/mid.go app/high.go
+  assert_exit 1
+  assert_contains "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22${TAB}15${TAB}skill default"
+  assert_contains "$OUT" "app/mid.go:3${TAB}go${TAB}Mid${TAB}cognitive${TAB}18${TAB}15${TAB}skill default"
+}
+
+t_go_invalid_limit_falls_back_to_default() {
+  go_tools
+  local repo; repo=$(go_repo)
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with gocognit)"
   add_file "$repo" .golangci.yml - <<'YML'
 linters:
   enable:
-    - gocyclo
+    - gocognit
 linters-settings:
-  dupl:
-    threshold: 100
-  gocyclo:
-    min-complexity: 12
+  gocognit:
+    min-complexity: not-a-number
 YML
-  commit_all "$repo"
-  export XDG_CACHE_HOME="$TEST_CACHE"
-  run_in "$repo" "$SCRIPTS/lang/go.sh" app/over.go app/over13.go
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/mid.go
   assert_exit 1
-  assert_not_contains "$OUT" "over.go"
-  assert_contains "$OUT" "app/over13.go:3${TAB}go${TAB}Huge${TAB}cyclomatic${TAB}13${TAB}12${TAB}.golangci.yml"
+  assert_contains "$OUT" "${TAB}18${TAB}15${TAB}skill default"
 }
 
-t_go_golangci_v2_limit() {
-  go_tool
-  local repo; repo=$(fixture)
-  copy_fixture "$repo" go/over.go app/over.go
-  copy_fixture "$repo" go/over13.go app/over13.go
+t_go_unconfigured_exits_4() {
+  go_tools
+  local repo; repo=$(go_repo)
   add_file "$repo" .golangci.yml - <<'YML'
 version: "2"
 linters:
   enable:
     - gocyclo
-  settings:
-    dupl:
-      threshold: 100
-    gocyclo:
-      min-complexity: 12
 YML
   commit_all "$repo"
-  export XDG_CACHE_HOME="$TEST_CACHE"
-  run_in "$repo" "$SCRIPTS/lang/go.sh" app/over.go app/over13.go
-  assert_exit 1
-  assert_not_contains "$OUT" "over.go"
-  assert_contains "$OUT" "app/over13.go:3${TAB}go${TAB}Huge${TAB}cyclomatic${TAB}13${TAB}12${TAB}.golangci.yml"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/mid.go app/high.go
+  assert_exit 4
+  assert_eq "$OUT" ""
 }
 
-t_go_tool_missing() {
-  local repo; repo=$(fixture)
-  copy_fixture "$repo" go/over.go app/over.go
+t_go_no_tools_exits_4() {
+  local repo; repo=$(go_repo)
   commit_all "$repo"
   export XDG_CACHE_HOME="$(mktmp)"
-  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/go.sh" app/over.go
-  assert_exit 3
-  assert_contains "$ERR" "gocyclo not found"
+  run_in "$repo" env PATH="/usr/bin:/bin" "$SCRIPTS/lang/go.sh" app/mid.go
+  assert_exit 4
+}
+
+t_go_leaves_no_files() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+YML
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)"
+  local before; before=$(cd "$repo" && git status --porcelain --ignored)
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/mid.go app/high.go
+  assert_exit 1
+  assert_eq "$(cd "$repo" && git status --porcelain --ignored)" "$before"
 }
