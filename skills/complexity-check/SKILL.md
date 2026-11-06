@@ -1,6 +1,6 @@
 ---
 name: complexity-check
-description: Use when asked to check, measure, or reduce the cyclomatic complexity of the branch's changed code or of a path — reports every function over its language's limit, then refactors only with the user's agreement, under the test suite. Other skills invoke it as `complexity-check check-only`.
+description: Use when asked to check, measure, or reduce the complexity (cognitive complexity) of the branch's changed code or of a path — reports every function over the limit, then refactors only with the user's agreement, under the test suite. Other skills invoke it as `complexity-check check-only`.
 argument-hint: "[setup|check-only] [path...]"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh *), Bash(${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan *)
 ---
@@ -9,18 +9,20 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.
 
 ## Overview
 
-Measure the complexity of every function in scope with each language's own tool, report the ones over the limit, and — only if the user says so — refactor them until they fit, with the full test suite run after every round.
+Measure the **cognitive complexity** of every function in scope, report the ones over the limit (15 unless the project sets its own), and — only if the user says so — refactor them until they fit, with the full test suite run after every round.
 
 **Core principle:** measure, report, then ask. The numbers come from the script, never from your own count; the decision to change code comes from the user, never from you.
 
+**The project's tool first.** If the project has a cognitive-complexity tool configured (ESLint with sonarjs, Biome, complexipy, gocognit, clippy), the check runs it with the project's limit; otherwise lizard measures — except Ruby, which the skill's own scorer measures (lizard ignores Ruby nesting). Everything runs on this machine; nothing leaves it.
+
 The work is split in two scripts:
 
-- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh [path...]` — measures. Offline, installs nothing; a language whose tool is missing is skipped, with its files named.
-- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan [path...]` / `install <tool>…` — lists the missing tools, then installs only the ones the user approved into `~/.cache/joadtor/complexity-check/`. Never into the project.
+- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/check.sh [path...]` — measures. Offline, installs nothing; a language it can't measure is skipped, with its files named.
+- `${CLAUDE_PLUGIN_ROOT}/skills/complexity-check/scripts/setup.sh plan [path...]` / `install lizard` — says whether lizard is needed and missing, then installs it into `~/.cache/joadtor/complexity-check/` once the user agrees. It never installs a project's own tool, and never touches the project.
 
-**Checking a repo runs that repo's code**, the same as running its tests: RuboCop evaluates ERB in `.rubocop.yml`, ESLint loads `eslint.config.js`, cargo compiles `build.rs` and proc-macros. Only check a repo whose tests you'd run.
+A project's own tool runs with the project's own config (as its CI would) — the same trust as running its tests. lizard only reads files.
 
-Limits per language, the install methods, and the refactor playbook are in `reference.md` — read it before refactoring.
+Tools, limits, unparsable files, the refactor playbook and exemption syntax are in `reference.md` — read it before refactoring.
 
 ## Modes
 
@@ -35,16 +37,17 @@ Limits per language, the install methods, and the refactor playbook are in `refe
 
 ## 1. Set up — one question, only if something is missing
 
-Run `setup.sh plan [path...]`. Empty output → go to step 2 without asking. Otherwise each line is `lang  tool  version  method  scope`; ask **once** with `AskUserQuestion`, listing every tool with its version and the cache path, and say plainly that the project's files are not touched:
+Run `setup.sh plan [path...]`. Empty output → go to step 2 without asking. Otherwise each line is `lang  tool  version  method  scope`:
 
-- `scope = global-toolchain` (clippy) → say it changes the user's Rust toolchain via `rustup`, not the cache.
-- `scope = runtime-missing` → not installable here; tell the user what to install, and that language will be skipped.
+- `tool = lizard`, `scope = cache` → ask **once** with `AskUserQuestion`: lizard, its version, the cache path, that the project's files are not touched and only the package is downloaded. Options: **Install** · **Skip** (the languages lizard would measure go unchecked). On Install, run `setup.sh install lizard`.
+- `scope = runtime-missing` → a runtime is missing: `uv` for lizard, or `ruby` for the Ruby scorer. Tell the user what to install, and that those languages will be skipped.
+- `scope = project-tool-missing` → the project configures its own tool but it isn't installed; tell the user to install the project's dependencies. Never install it yourself — lizard measures that language meanwhile.
 
-Options: **Install all** · **Pick which** · **Skip** (those languages go unchecked). Then run `setup.sh install` with exactly the approved tools. If you cannot ask, don't install.
+If you cannot ask, don't install.
 
 ## 2. Check, then report before touching anything
 
-Run `check.sh [path...]`. Each stdout line is `file:line  lang  function  metric  score  limit  source`; stderr names skipped languages and bypassed configs. Report to the user **before any edit**:
+Run `check.sh [path...]`. Each stdout line is `file:line  lang  function  cognitive  score  limit  source`; stderr names skipped languages and files that couldn't be parsed (unchecked — never call those clean). Report to the user **before any edit**:
 
 - every offender: `file:line`, the function, score vs limit, **where the limit came from** (the `source` column — a project setting, or the skill default), and a one-line suggested refactor;
 - every skipped language with its unchecked files;

@@ -1,74 +1,65 @@
 # complexity-check reference
 
-## Limits
+## The metric
+
+**Cognitive complexity** (SonarSource's algorithm): +1 for each break in the flow (`if`, loop, `catch`, a sequence of `&&`/`||`, recursion), **plus one more per level of nesting**; a whole `switch` counts once. It measures how hard a function is to *read*, so deep nesting costs most and a flat dispatch costs little.
 
 A function fails when its score is **over** the limit; at the limit it passes.
 
-| Language | Tool | Metric | Default | Why this number |
+## Limits and tools
+
+The project's own cognitive tool wins when it is **configured** — installed and enabled for cognitive complexity, not merely installed. Its limit wins too, and the report names where it came from (`source` column). Otherwise lizard measures, at the skill default.
+
+| Language | Project's own tool, when configured | Limit read from | Default | Otherwise |
 |---|---|---|---|---|
-| Ruby | rubocop | cyclomatic + perceived | 8 | RuboCop's cyclomatic count adds 1 per iterator block (`map`, `each`), which inflates Ruby against other languages; 8 is one above its cyclomatic default (7) and equal to its perceived default |
-| JS/TS | eslint `complexity` (classic) | cyclomatic | 10 | McCabe/NIST's 10, the value most tools settle on; ESLint's own default of 20 is an outlier |
-| Python | radon | cyclomatic | 10 | ruff/mccabe default |
-| Go | gocyclo | cyclomatic | 10 | golangci-lint's `cyclop` default, the low end of its "10–20" recommendation |
-| Rust | clippy `cognitive_complexity` | cognitive | 15 | SonarSource's cognitive default; Clippy's own 25 is a restriction-lint default |
+| Ruby | — (none exists) | — | 15 | the skill's Ruby scorer (needs `ruby`; never lizard) |
+| JS/TS | ESLint with `sonarjs/cognitive-complexity` on, or Biome with `complexity/noExcessiveCognitiveComplexity` on | the rule's option / `maxAllowedComplexity` in `biome.json` | 15 | lizard |
+| Python | complexipy, with `[tool.complexipy]` in `pyproject.toml` | `max-complexity-allowed` | 15 | lizard |
+| Go | gocognit through golangci-lint (`.golangci.yml` enables it), or a `gocognit` on the PATH | `gocognit.min-complexity` | 15 | lizard |
+| Rust | clippy's `cognitive_complexity`, when `clippy.toml` sets a threshold or `Cargo.toml`'s `[lints.clippy]` enables it | `cognitive-complexity-threshold` | 15 | lizard |
 
-**Precedence:** a limit the project sets explicitly wins, and the report names it (`source` column):
+**Why 15:** SonarSource's default, and also sonarjs's, Biome's and complexipy's. **Why lizard:** one tool for every language; on the same functions it scored exactly what gocognit, complexipy and sonarjs score (10/10/10 flat, 15/15/15 and 11/11 nested). **Why not lizard for Ruby:** its Ruby parser ignores nesting (a nested method scored 4–5 where the same shape scores 11 elsewhere). Ruby gets the skill's own scorer instead: SonarSource's rules over Ruby's built-in parser (Ripper) — it parses, never runs, and needs nothing beyond Ruby. Two Ruby notes: a block (`each do`) raises nesting but isn't a loop, so a body under `items.each do` scores one less than under `for`; and `x rescue y` counts like a `rescue`. Clippy is used only when the project configures it — its "cognitive" score drifts from SonarSource's (16 where the others score 20), and its own docs say the lint doesn't measure what its name says.
 
-| Language | Read from |
-|---|---|
-| Ruby | `.rubocop.yml` `Max` per cop — a disabled cop (`Metrics: Enabled: false`, as in rails-omakase, Shopify, standardrb) carries no number, so the skill default applies |
-| JS/TS | the project's ESLint config, `rules.complexity` (off → skill default) |
-| Python | `[tool.ruff.lint.mccabe] max-complexity` (pyproject / ruff.toml), else `[flake8] max-complexity` (setup.cfg, .flake8, tox.ini) |
-| Go | `.golangci.yml` `gocyclo.min-complexity` (v1 or v2 layout) |
-| Rust | `clippy.toml` `cognitive-complexity-threshold` |
+A project tool that is configured but not installed (no `node_modules`, no venv) is never installed by the skill: `setup.sh plan` notes it, and lizard measures that language until the project's dependencies are installed.
 
-Otherwise the skill default applies (`source = skill default`).
+## Trust and staying local
 
-## Trust
+- **The Ruby scorer** only parses: it runs from a temp dir with gems and `RUBYOPT` disabled, reads each file's text, and never loads or runs it — a shebang's switches never apply.
+- **lizard** only reads source text. It runs from a temp dir with a scrubbed Python environment, writes nothing into the project (ignored files included), loads nothing from it, and makes no network call. A test proves each of these.
+- **A project's own tool** runs with the project's own config, as it would in the project's CI — ESLint loads `eslint.config.js`, cargo compiles `build.rs` and proc-macros. That's the same trust as running the project's tests, which the refactor loop does anyway. golangci-lint is the exception: it always runs from a generated config holding only gocognit and the project's numeric limit, because a `.golangci.yml` can load plugins.
+- **A repo-local tool binary** (`node_modules/.bin`, `.venv/bin`) is used only under a gitignored directory, with no committed part in its path — a committed binary or symlink was planted.
+- **Nothing leaves the machine while checking.** `check.sh` installs nothing and is tested with outbound network blocked by the OS. The only network use is `setup.sh install lizard`, after the user agrees: it downloads the pinned package; no code or result is sent.
 
-The check honors the project's own lint configuration — its limits, plugins, and exclusions — so it runs the code those configs contain: ERB in `.rubocop.yml` (also when inherited into the cached rubocop's temporary config), `eslint.config.js`, cargo build scripts and proc-macros. That is the same trust as running the project's test suite, which the refactor loop does anyway. Only check repos you'd run the tests of. What the check itself never does: evaluate a config value as shell, import a module from the repo into its own helpers, or download anything.
+## Unparsable files
 
-## Tools and where they come from
-
-`check.sh` runs the project's own tool first (`bundle exec rubocop`, `node_modules/.bin/eslint`), then one on the `PATH`, then the cache `~/.cache/joadtor/complexity-check/bin/`. When a project's `.rubocop.yml` can't load (a plugin gem isn't installed for the rubocop being used), the check bypasses it with a temporary config holding only the limits, and says so. A remote `inherit_from: http(s)://…` is bypassed the same way up front — the check never downloads.
-
-A project without its own ESLint is still covered for TypeScript: the check writes a throwaway flat config in a temp dir that imports `typescript-eslint`'s parser from the cache by absolute `file://` path, and runs the cached eslint with `-c` on it from the project root — the project gets no config file and no dependency.
-
-`setup.sh install` — exact pins, installed from the cache directory so nothing in the project influences them:
-
-| Tool | Method | Needs |
-|---|---|---|
-| rubocop | `gem install --remote --install-dir` + wrapper | Ruby ≥ 2.7 |
-| eslint (+ typescript-eslint, typescript) | `npm install --prefix`, `--ignore-scripts`, explicit registry | npm |
-| radon | `uv tool install --no-config` | uv |
-| gocyclo | `go install …@v0.6.0` | go |
-| clippy | `rustup component add clippy` — **changes the user's Rust toolchain**, not the cache | rustup |
+A Ruby file the scorer can't parse is reported **unchecked**, never clean. lizard reports nothing for a file it can't parse; for Python and Go the check cross-checks such a file with the language's own read-only syntax check and reports it unchecked too. For JS/TS and Rust no cheap checker exists, so a broken file there reads as having no functions — fix syntax errors first.
 
 ## Refactor playbook
 
-Work through these in order; stop as soon as the function fits.
+Cognitive complexity is driven by nesting, so flatten first. Work through these in order; stop as soon as the function fits.
 
-1. **Guard clauses** — replace nested conditionals with early returns for the special cases.
-2. **Decompose conditional** — move a complex condition, or each branch's body, into a well-named function.
-3. **Consolidate conditional** — merge branches that produce the same result into one condition.
-4. **Extract function** — pull a coherent piece out — one that has its own name and does one thing.
-5. **Lookup table or polymorphism** — a long `case`/`if-elsif` dispatching on a value becomes a hash/map, or one class per variant.
+1. **Guard clauses** — turn nested conditionals into early returns for the special cases. This removes nesting levels, which is where most of the score comes from.
+2. **Extract the nested block** — pull the innermost loop or branch into a well-named function; its nesting no longer counts against the caller.
+3. **Decompose conditional** — move a complex condition into a named predicate.
+4. **Consolidate conditional** — merge branches that produce the same result.
+5. **Lookup table or polymorphism** — a long `if/elsif` dispatching on a value becomes a hash/map, or one class per variant.
 
-**Don't shuffle.** If the extracted helper carries the same branches the original had, the total didn't go down — the complexity just moved. AI refactors measurably do this: they shrink method length while cyclomatic complexity stays or rises.
+**Don't shuffle.** If the extracted helper carries the same nested branches, the total didn't go down — it just moved. AI refactors measurably do this: they shrink method length while the branching stays.
 
 **Behavior must not change.** The full suite runs after every round. LLM refactors silently changed behavior in about 7% of cases in one study (22 of 313) — the tests are the only proof they didn't here.
 
-**A single flat `case`/`switch`** that maps inputs to outputs is the one shape NIST says may reasonably be exempted. It's a candidate for the *exempt* recommendation after round 3 — still the user's call.
+**A single flat `case`/`switch`** that maps inputs to outputs scores low in cognitive terms already; if one is still over, it's a candidate for the *exempt* recommendation after round 3 — still the user's call.
 
 ## Reasoned exemptions (only when the user chose it)
 
-```ruby
-def dispatch(event) # rubocop:disable Metrics/CyclomaticComplexity -- flat dispatch over 12 event types
-```
+The reason is mandatory. Use the form for whichever tool measured the function (the `source` column tells you):
 
-```js
-// eslint-disable-next-line complexity -- flat dispatch over 12 event types
-function dispatch(event) {
-```
-
-Python (`# noqa: C901 -- <reason>`), Go (`//nolint:gocyclo // <reason>`), Rust (`#[allow(clippy::cognitive_complexity)] // <reason>`) follow the same rule: the reason is mandatory.
+| Tool | Exemption |
+|---|---|
+| lizard | `// #lizard forgives -- <reason>` (or `# #lizard forgives -- <reason>`) as the first line inside the function |
+| Ruby scorer | none yet — record the user's decision in the report; the function stays listed |
+| ESLint + sonarjs | `// eslint-disable-next-line sonarjs/cognitive-complexity -- <reason>` |
+| Biome | `// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <reason>` |
+| golangci-lint (gocognit) | `//nolint:gocognit // <reason>` |
+| clippy | `#[allow(clippy::cognitive_complexity)] // <reason>` |
+| complexipy | see complexipy's docs for its ignore comment; state the reason beside it |
