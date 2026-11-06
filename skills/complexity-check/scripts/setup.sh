@@ -8,6 +8,7 @@
 #                                  scope: cache | runtime-missing (uv is missing; method says what to install)
 #                                  a note row (scope project-tool-missing) when a project configures a tool that isn't installed:
 #                                  that language is measured by lizard until the project's own dependencies are installed
+#                                  a note row "ruby ruby - install Ruby runtime-missing" when ruby is missing (never lizard)
 #        setup.sh install lizard   install lizard into the cache, never into the project
 # Exit: plan 0 · install 0 on success, else 1 with a stderr line · 2 no base branch (no path given)
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh" || exit 1
@@ -19,7 +20,7 @@ LIZARD_VERSION=1.25.0
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # <lang> <file>... — exit status of the language's --detect: 0 own tool ready, 4 none configured, 5 configured but missing
-# (stderr line is left in $detect_err). Ruby has no own tool.
+# (stderr line is left in $detect_err). For Ruby, 5 means ruby itself is missing: Ruby never needs lizard.
 detect() {
   local lang=$1; shift
   detect_err=""
@@ -42,9 +43,10 @@ EOF2
 $list
 EOF2
     detect "$lang" "$@"; st=$?
-    case $st in
-      0) ;;
-      5) tool=${detect_err%% (configured*}
+    case $lang:$st in
+      *:0) ;;
+      ruby:5) printf 'ruby\truby\t-\tinstall Ruby\truntime-missing\n' ;;
+      *:5) tool=${detect_err%% (configured*}
          printf '%s\t%s\t-\tinstall the project'"'"'s dependencies\tproject-tool-missing\n' "$lang" "$tool"
          needs_lizard=1 ;;
       *) needs_lizard=1 ;;

@@ -30,7 +30,7 @@ snapshot() { (cd "$1" && find . -path ./.git -prune -o -type f -print | sort | w
 
 t_setup_asks_once_when_a_language_has_no_tool() {
   local r s c; r="$(fixture)"; s="$(mktmp)/bin"; c="$(mktmp)"; stub_path "$s" uv
-  add_file "$r" app/user.rb "class User; end"
+  add_file "$r" web/a.ts "export const a = 1;"
   add_file "$r" cmd/main.go "package main"
   commit_all "$r"
   _setup "$r" "$s" "$c" plan
@@ -123,11 +123,11 @@ EOT
 t_setup_after_one_install_other_projects_need_no_setup() {
   need_net
   local a b s; a="$(fixture)"; b="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s" uv
-  add_file "$a" app/a.rb "class A; end"; commit_all "$a"
+  add_file "$a" cmd/a.go "package main"; commit_all "$a"
   [ -x "$TEST_CACHE/joadtor/complexity-check/bin/lizard" ] ||
     run_in "$a" env XDG_CACHE_HOME="$TEST_CACHE" bash "$SCRIPTS/setup.sh" install lizard
   add_file "$b" cmd/main.go "package main"
-  add_file "$b" app/b.rb "class B; end"; commit_all "$b"
+  add_file "$b" src/b.rs "fn b() {}"; commit_all "$b"
   _setup "$b" "$s" "$TEST_CACHE" plan
   assert_exit 0
   assert_eq "$OUT" ""
@@ -135,7 +135,7 @@ t_setup_after_one_install_other_projects_need_no_setup() {
 
 t_setup_declining_installs_nothing() {
   local r s c; r="$(fixture)"; s="$(mktmp)/bin"; c="$(mktmp)"; stub_path "$s" uv
-  add_file "$r" app/user.rb "class User; end"; commit_all "$r"
+  add_file "$r" cmd/main.go "package main"; commit_all "$r"
   _setup "$r" "$s" "$c" plan
   assert_exit 0
   assert_contains "$OUT" "lizard"
@@ -145,7 +145,7 @@ t_setup_declining_installs_nothing() {
 
 t_setup_missing_runtime_is_reported_not_installed() {
   local r s c; r="$(fixture)"; s="$(mktmp)/bin"; c="$(mktmp)"; stub_path "$s"
-  add_file "$r" app/user.rb "class User; end"; commit_all "$r"
+  add_file "$r" cmd/main.go "package main"; commit_all "$r"
   _setup "$r" "$s" "$c" plan
   assert_exit 0
   assert_eq "$OUT" "-${TAB}lizard${TAB}$(lizard_pin)${TAB}install uv first${TAB}runtime-missing"
@@ -155,7 +155,7 @@ t_setup_missing_runtime_is_reported_not_installed() {
 t_setup_a_broken_uv_is_runtime_missing() {
   local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s"
   printf '#!/bin/sh\nexit 1\n' > "$s/uv"; chmod +x "$s/uv"
-  add_file "$r" app/user.rb "class User; end"; commit_all "$r"
+  add_file "$r" cmd/main.go "package main"; commit_all "$r"
   _setup "$r" "$s" "$(mktmp)" plan
   assert_contains "$OUT" "install uv first${TAB}runtime-missing"
 }
@@ -181,6 +181,24 @@ t_setup_plan_skips_test_file_arguments() {
   add_file "$r" spec/x_spec.rb "describe 1"
   commit_all "$r"
   _setup "$r" "$s" "$(mktmp)" plan spec/x_spec.rb
+  assert_exit 0
+  assert_eq "$OUT" ""
+}
+
+t_setup_missing_ruby_is_a_note_not_lizard() {
+  local r s c; r="$(fixture)"; s="$(mktmp)/bin"; c="$(mktmp)"; stub_path "$s" uv
+  add_file "$r" app/user.rb "class User; end"; commit_all "$r"
+  _setup "$r" "$s" "$c" plan
+  assert_exit 0
+  assert_eq "$OUT" "ruby${TAB}ruby${TAB}-${TAB}install Ruby${TAB}runtime-missing"
+}
+
+t_setup_ruby_never_needs_lizard() {
+  skip_unless_cmd ruby
+  local r s; r="$(fixture)"; s="$(mktmp)/bin"; stub_path "$s" uv
+  ln -sf "$(ruby -e 'print RbConfig.ruby')" "$s/ruby"
+  add_file "$r" app/user.rb "class User; end"; commit_all "$r"
+  _setup "$r" "$s" "$(mktmp)" plan
   assert_exit 0
   assert_eq "$OUT" ""
 }
