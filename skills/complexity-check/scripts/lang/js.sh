@@ -13,10 +13,11 @@ detect=0
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-js.XXXXXX") || exit 2
 trap 'rm -rf "$tmp"' EXIT
 
-# Prints the rule's numeric limit, or "default", when sonarjs/cognitive-complexity is on; nothing when off.
+# Prints the rule's numeric limit, or "default", when sonarjs/cognitive-complexity is on for the file; nothing when off.
 eslint_limit() {
   node_modules/.bin/eslint --print-config "$1" 2> /dev/null | node -e '
-    const rule = (JSON.parse(require("fs").readFileSync(0, "utf8")).rules || {})["sonarjs/cognitive-complexity"];
+    let rule;
+    try { rule = (JSON.parse(require("fs").readFileSync(0, "utf8")).rules || {})["sonarjs/cognitive-complexity"]; } catch (e) { process.exit(0); }
     const [sev, opt] = Array.isArray(rule) ? rule : [rule];
     if (sev === undefined || sev === 0 || sev === "off") process.exit(0);
     console.log(Number.isInteger(opt) && opt > 0 ? opt : "default");
@@ -24,28 +25,58 @@ eslint_limit() {
 }
 
 if [ -n "$(local_tool node_modules/.bin/eslint)" ]; then
-  configured=$(eslint_limit "$1")
-  if [ -n "$configured" ]; then
+  : > "$tmp/covered"
+  uncovered=()
+  for f in "$@"; do
+    c=$(eslint_limit "$f")
+    if [ -z "$c" ]; then uncovered+=("$f"); continue; fi
     [ $detect = 1 ] && exit 0
-    limit=$(default_limit js) src="skill default"
-    [ "$configured" != default ] && { limit=$configured; src="eslint config"; }
-    node_modules/.bin/eslint --format json "$@" > "$tmp/out.json" 2> "$tmp/err"
-    [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 2; }
-    LIMIT=$limit SRC=$src node -e '
-      const fs = require("fs"), path = require("path");
-      for (const f of JSON.parse(fs.readFileSync(process.argv[1], "utf8"))) {
-        const lines = fs.readFileSync(f.filePath, "utf8").split("\n");
-        for (const m of f.messages) {
-          if (m.ruleId !== "sonarjs/cognitive-complexity") continue;
-          const score = (m.message.match(/Cognitive Complexity from (\d+) to/) || [])[1];
-          if (!score) continue;
-          const name = ((lines[m.line - 1] || "").slice(m.column - 1).match(/^[A-Za-z_$][\w$]*/) || [])[0] || "<anonymous>";
-          console.log([path.relative(process.cwd(), f.filePath) + ":" + m.line, "js", name, "cognitive", score, process.env.LIMIT, process.env.SRC].join("\t"));
+    printf '%s\t%s\n' "$c" "$f" >> "$tmp/covered"
+  done
+  if [ -s "$tmp/covered" ]; then
+    : > "$tmp/offenders"
+    unchecked=0
+    for f in ${uncovered[@]+"${uncovered[@]}"}; do
+      echo "complexity: $f not covered by the project's ESLint config — unchecked" >&2
+      unchecked=1
+    done
+    while IFS= read -r configured; do
+      limit=$(default_limit js) src="skill default"
+      [ "$configured" != default ] && { limit=$configured; src="eslint config"; }
+      group=()
+      while IFS=$'\t' read -r c f; do
+        [ "$c" = "$configured" ] && group+=("$f")
+      done < "$tmp/covered"
+      node_modules/.bin/eslint --format json "${group[@]}" > "$tmp/out.json" 2> "$tmp/err"
+      [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 2; }
+      LIMIT=$limit SRC=$src node -e '
+        const fs = require("fs"), path = require("path");
+        let bad = false;
+        for (const f of JSON.parse(fs.readFileSync(process.argv[1], "utf8"))) {
+          const rel = path.relative(process.cwd(), f.filePath);
+          const lines = fs.readFileSync(f.filePath, "utf8").split("\n");
+          for (const m of f.messages) {
+            if (m.fatal || /^File ignored/.test(m.message)) {
+              console.error("complexity: " + rel + " could not be parsed — unchecked");
+              bad = true;
+              continue;
+            }
+            if (m.ruleId !== "sonarjs/cognitive-complexity") continue;
+            const score = (m.message.match(/Cognitive Complexity from (\d+) to/) || [])[1];
+            if (!score) continue;
+            const name = ((lines[m.line - 1] || "").slice(m.column - 1).match(/^[A-Za-z_$][\w$]*/) || [])[0] || "<anonymous>";
+            console.log([rel + ":" + m.line, "js", name, "cognitive", score, process.env.LIMIT, process.env.SRC].join("\t"));
+          }
         }
-      }
-    ' "$tmp/out.json" > "$tmp/offenders"
+        process.exitCode = bad ? 3 : 0;
+      ' "$tmp/out.json" >> "$tmp/offenders"
+      [ $? -eq 3 ] && unchecked=1
+    done <<EOF2
+$(cut -f1 "$tmp/covered" | sort -u)
+EOF2
     cat "$tmp/offenders"
     [ -s "$tmp/offenders" ] && exit 1
+    [ $unchecked = 1 ] && exit 2
     exit 0
   fi
 fi
@@ -79,7 +110,14 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
       const fs = require("fs"), path = require("path");
       const raw = fs.readFileSync(process.argv[1], "utf8");
       const r = JSON.parse(raw.slice(raw.indexOf("{")));
+      let bad = false;
       for (const d of r.diagnostics) {
+        if (d.category === "parse" && d.location && d.location.path) {
+          const p = path.relative(process.cwd(), path.resolve(d.location.path.file || d.location.path));
+          console.error("complexity: " + p + " could not be parsed — unchecked");
+          bad = true;
+          continue;
+        }
         if (d.category !== "lint/complexity/noExcessiveCognitiveComplexity") continue;
         const score = (d.message.match(/complexity of (\d+) detected/) || [])[1];
         if (!score || !d.location || !d.location.path) continue;
@@ -88,9 +126,12 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
         const name = (line.slice(d.location.start.column - 1).match(/^[A-Za-z_$][\w$]*/) || [])[0] || "<anonymous>";
         console.log([path.relative(process.cwd(), file) + ":" + d.location.start.line, "js", name, "cognitive", score, process.env.LIMIT, process.env.SRC].join("\t"));
       }
+      process.exitCode = bad ? 3 : 0;
     ' "$tmp/out.json" > "$tmp/offenders"
+    unchecked=$?
     cat "$tmp/offenders"
     [ -s "$tmp/offenders" ] && exit 1
+    [ $unchecked -eq 3 ] && exit 2
     exit 0
   fi
 fi

@@ -231,3 +231,48 @@ echo "{}"
 dir
 "
 }
+
+t_go_a_gocognit_in_the_skill_cache_is_not_used() {
+  go_tools
+  local repo c; repo=$(go_repo); c=$(mktmp)
+  commit_all "$repo"
+  mkdir -p "$c/joadtor/complexity-check/bin"
+  ln -s "$TEST_CACHE/go-bin/gocognit" "$c/joadtor/complexity-check/bin/gocognit"
+  run_in "$repo" env XDG_CACHE_HOME="$c" PATH="/usr/bin:/bin" "$SCRIPTS/lang/go.sh" app/high.go
+  assert_exit 4
+}
+
+t_go_gocognit_unparsable_file_is_unchecked_not_clean() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" app/broken.go 'package app
+func Broken( {'
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with gocognit)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/broken.go
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: app/broken.go could not be parsed — unchecked"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/broken.go app/mid.go
+  assert_exit 1
+  assert_contains "$OUT" "app/mid.go:3${TAB}go${TAB}Mid"
+  assert_eq "$ERR" "complexity: app/broken.go could not be parsed — unchecked"
+}
+
+t_go_golangci_unparsable_file_is_unchecked_not_clean() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+YML
+  add_file "$repo" app/broken.go 'package app
+func Broken( {'
+  commit_all "$repo"
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" app/broken.go
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: app/broken.go could not be parsed — unchecked"
+}

@@ -12,6 +12,7 @@ detect=0
 # Both tools report a function when score > limit (golangci: "(> N)", gocognit: -over N).
 # golangci-lint ignores `go` downloads: GOPROXY=off so it can never fetch a module.
 export GOPROXY=off GOFLAGS=
+TAB=$(printf '\t')
 
 limit=$(default_limit go) src="skill default" enabled="" configured=""
 
@@ -60,6 +61,8 @@ if kind == "golangci":
         m = re.match(r"cognitive complexity (\d+) of func `(.*)` is high", i["Text"])
         if m:
             rows.append((i["Pos"]["Filename"], i["Pos"]["Line"], m.group(2), m.group(1)))
+        elif i.get("FromLinter") == "typecheck":
+            rows.append((i["Pos"]["Filename"], 0, None, None))
 else:
     for i in data or []:
         rows.append((i["Pos"]["Filename"], i["Pos"]["Line"], i["FuncName"], i["Complexity"]))
@@ -67,15 +70,26 @@ for name, line, func, score in rows:
     for base in (phys, root):
         rel = want.get(os.path.normpath(os.path.join(base, name)))
         if rel:
-            print("\t".join([rel + ":" + str(line), "go", func, "cognitive", str(score), limit, src]))
+            if func is None:
+                print("unchecked\t" + rel)
+            else:
+                print("\t".join([rel + ":" + str(line), "go", func, "cognitive", str(score), limit, src]))
             break
 ' "$@"
 }
 
 emit() { # reads JSON on stdin; kind root limit src file...
-  local out
+  local out hits bad f
   out=$(report "$@") || return 2
-  [ -n "$out" ] && { printf '%s\n' "$out"; return 1; }
+  hits=$(printf '%s\n' "$out" | grep -v '^unchecked'"$TAB")
+  bad=$(printf '%s\n' "$out" | sed -n "s/^unchecked$TAB//p" | sort -u)
+  while IFS= read -r f; do
+    [ -n "$f" ] && echo "complexity: $f could not be parsed — unchecked" >&2
+  done <<EOF2
+$bad
+EOF2
+  [ -n "$hits" ] && { printf '%s\n' "$hits"; return 1; }
+  [ -n "$bad" ] && return 2
   return 0
 }
 
@@ -110,9 +124,7 @@ if [ -n "$enabled" ]; then
 fi
 
 gc=""
-if command -v gocognit >/dev/null 2>&1 && gocognit -h 2>&1 | grep -q 'cognitive complexities'; then gc=gocognit
-elif [ -x "$CACHE/bin/gocognit" ]; then gc="$CACHE/bin/gocognit"
-fi
+if command -v gocognit >/dev/null 2>&1 && gocognit -h 2>&1 | grep -q 'cognitive complexities'; then gc=gocognit; fi
 if [ $detect = 1 ]; then
   [ -n "$gc" ] && exit 0
   [ -n "$enabled" ] && { echo "golangci-lint (configured in $enabled) is not installed — install the project's dependencies" >&2; exit 5; }
@@ -121,6 +133,28 @@ fi
 [ -z "$gc" ] && exit 4
 command -v python3 >/dev/null 2>&1 || { echo "python3 not found" >&2; exit 3; }
 
-out=$($gc -json -over "$limit" "$@" 2>/dev/null); status=$?
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 2
+trap 'rm -rf "$tmp"' EXIT
+out=$($gc -json -over "$limit" "$@" 2>"$tmp/err"); status=$?
 [ $status -gt 1 ] && exit 2
+# gocognit measures nothing when any file fails to parse: name those files, then measure the rest.
+bad=$(sed -n 's/^gocognit: \(.*\):[0-9][0-9]*:[0-9][0-9]*: .*/\1/p' "$tmp/err" | sort -u)
+if [ -n "$bad" ]; then
+  rest=()
+  for f in "$@"; do
+    case "$TAB$(printf '%s' "$bad" | tr '\n' "$TAB")$TAB" in
+      *"$TAB$f$TAB"*) echo "complexity: $f could not be parsed — unchecked" >&2 ;;
+      *) rest+=("$f") ;;
+    esac
+  done
+  out=""
+  if [ ${#rest[@]} -gt 0 ]; then
+    out=$($gc -json -over "$limit" "${rest[@]}" 2>/dev/null); status=$?
+    [ $status -gt 1 ] && exit 2
+  fi
+  [ -z "$out" ] && exit 2
+  printf '%s\n' "$out" | emit gocognit "$PWD" "$limit" "$src" "${rest[@]}"
+  [ $? -eq 1 ] && exit 1
+  exit 2
+fi
 printf '%s\n' "$out" | emit gocognit "$PWD" "$limit" "$src" "$@"

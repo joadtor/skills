@@ -78,9 +78,7 @@ t_common_resolve_path_then_cache() {
   printf '#!/bin/sh
 exit 0
 ' > "$cache/joadtor/complexity-check/bin/lizard"
-  printf '#!/bin/sh
-exit 0
-' > "$bin/lizard"
+  printf '#!/bin/sh\necho 1.25.0\n' > "$bin/lizard"
   chmod +x "$cache/joadtor/complexity-check/bin/lizard" "$bin/lizard"
   run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve lizard"
   assert_eq "$OUT" "lizard" "a working tool on PATH comes before the cache"
@@ -166,4 +164,21 @@ touch '$marker'"
   _common "$r" 'local_tool node_modules/.bin/eslint; resolve eslint'
   assert_eq "$OUT" "" "a tool reached through a committed symlink is never used"
   [ ! -e "$marker" ] || fail "a committed repo binary was executed"
+}
+
+t_common_resolve_rejects_a_lizard_below_the_cognitive_minimum() {
+  local r bin cache; r="$(fixture)"; bin="$TEST_TMP/bin"; cache="$TEST_TMP/xdg"
+  mkdir -p "$cache/joadtor/complexity-check/bin" "$bin"
+  printf '#!/bin/sh\necho 1.24.3\n' > "$cache/joadtor/complexity-check/bin/lizard"
+  chmod +x "$cache/joadtor/complexity-check/bin/lizard"
+  for v in 1.17.10 1.24.2 garbage; do
+    printf '#!/bin/sh\necho %s\n' "$v" > "$bin/lizard"; chmod +x "$bin/lizard"
+    run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve lizard"
+    assert_eq "$OUT" "$cache/joadtor/complexity-check/bin/lizard" "PATH lizard $v is ignored"
+  done
+  for v in 1.24.3 1.25.0 1.100.0 2.0.0; do
+    printf '#!/bin/sh\necho %s\n' "$v" > "$bin/lizard"
+    run_in "$r" env XDG_CACHE_HOME="$cache" PATH="$bin:/usr/bin:/bin" bash -c ". \"$SCRIPTS/_common.sh\"; resolve lizard"
+    assert_eq "$OUT" "lizard" "PATH lizard $v is accepted"
+  done
 }

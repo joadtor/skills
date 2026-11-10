@@ -171,3 +171,95 @@ t_js_detect_biome_configured_and_runnable_exits_0() {
   assert_exit 0
   [ ! -e "$repo/../calls" ] || fail "biome was run: $(cat "$repo/../calls")"
 }
+
+js_cover_js_only_config() { # <repo> <limit>
+  add_file "$1" eslint.config.mjs - <<EOC
+import sonarjs from "eslint-plugin-sonarjs";
+export default [{ files: ["**/*.js"], plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": ["error", $2] } }];
+EOC
+}
+
+t_js_files_the_eslint_config_does_not_cover_are_unchecked_not_a_crash() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  js_cover_js_only_config "$repo" 20
+  copy_fixture "$repo" js/cog16.ts src/a.ts
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/a.ts src/cog22.js src/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}eslint config"
+  assert_eq "$ERR" "complexity: src/a.ts not covered by the project's ESLint config — unchecked"
+}
+
+t_js_uncovered_files_alone_go_to_lizard() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  js_cover_js_only_config "$repo" 20
+  copy_fixture "$repo" js/cog16.ts src/a.ts
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/a.ts
+  assert_exit 4
+  assert_eq "$OUT$ERR" ""
+}
+
+t_js_nothing_over_with_uncovered_files_is_exit_2() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  js_cover_js_only_config "$repo" 20
+  copy_fixture "$repo" js/cog16.ts src/a.ts
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/a.ts src/cog18.js
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: src/a.ts not covered by the project's ESLint config — unchecked"
+}
+
+t_js_files_with_different_eslint_limits_are_each_measured_at_their_own() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  add_file "$repo" eslint.config.mjs - <<'EOC'
+import sonarjs from "eslint-plugin-sonarjs";
+export default [
+  { files: ["src/**/*.js"], plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": ["error", 25] } },
+  { files: ["lib/**/*.js"], plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": ["error", 10] } },
+];
+EOC
+  copy_fixture "$repo" js/cog22.js src/cog22.js
+  copy_fixture "$repo" js/cog18.js lib/cog18.js
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js lib/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "lib/cog18.js:1${TAB}js${TAB}steady${TAB}cognitive${TAB}18${TAB}10${TAB}eslint config"
+}
+
+t_js_eslint_unparsable_file_is_unchecked_not_clean() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  js_cover_js_only_config "$repo" 20
+  add_file "$repo" src/broken.js 'function f( {'
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/broken.js
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: src/broken.js could not be parsed — unchecked"
+}
+
+t_js_biome_unparsable_file_is_unchecked_not_clean() {
+  skip_unless_cmd node
+  js_biome_template
+  local repo; repo=$(js_repo js-biome)
+  add_file "$repo" biome.json '{"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":{"level":"error","options":{"maxAllowedComplexity":20}}}}}}'
+  add_file "$repo" src/broken.js 'function f( {'
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/broken.js
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: src/broken.js could not be parsed — unchecked"
+}

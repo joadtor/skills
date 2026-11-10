@@ -12,6 +12,7 @@
 #   default_limit <lang> per-function complexity ceiling for the language
 #   local_tool <path>    a repo-local tool binary if executable and not committed to git; empty otherwise
 #   resolve <tool>       command to run: project-local, then PATH, then $CACHE/bin; empty if none
+#                        (a PATH lizard older than 1.24.3, or with an unreadable version, is skipped)
 PREFIX=$(git rev-parse --show-prefix) || return 1
 cd "$(git rev-parse --show-toplevel)" || return 1
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/joadtor/complexity-check"
@@ -93,9 +94,25 @@ local_tool() {
   echo "$p"
 }
 
+# lizard's cognitive extension exists from 1.24.3; an older or unreadable version is not usable.
+lizard_new_enough() {
+  local v major minor patch
+  v=$("$1" --version 2>/dev/null | head -n 1)
+  case $v in [0-9]*.[0-9]*.[0-9]*) ;; *) return 1 ;; esac
+  IFS=. read -r major minor patch <<EOF
+$v
+EOF
+  case $major$minor$patch in *[!0-9]*) return 1 ;; esac
+  [ "$major" -gt 1 ] || [ "$minor" -gt 24 ] || { [ "$minor" -eq 24 ] && [ "$patch" -ge 3 ]; }
+}
+
 resolve() {
   case "$1" in
     eslint)  [ -n "$(local_tool node_modules/.bin/eslint)" ] && { echo node_modules/.bin/eslint; return; } ;;
+    lizard)  if command -v lizard >/dev/null 2>&1 && lizard_new_enough lizard; then echo lizard
+             elif [ -x "$CACHE/bin/lizard" ]; then echo "$CACHE/bin/lizard"
+             fi
+             return 0 ;;
   esac
   # A version-manager shim (nodenv, rbenv, asdf) is on PATH even when the tool isn't installed — it must run.
   if command -v "$1" >/dev/null 2>&1 && "$1" --version >/dev/null 2>&1; then echo "$1"

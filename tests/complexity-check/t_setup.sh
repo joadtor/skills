@@ -202,3 +202,13 @@ t_setup_ruby_never_needs_lizard() {
   assert_exit 0
   assert_eq "$OUT" ""
 }
+
+t_setup_plan_asks_for_lizard_when_the_path_one_is_too_old() {
+  local r s c; r="$(fixture)"; s="$(mktmp)/bin"; c="$(mktmp)"; stub_path "$s" uv
+  printf '#!/bin/sh\necho 1.17.10\n' > "$s/lizard"; chmod +x "$s/lizard"
+  add_file "$r" cmd/main.go "package main"
+  commit_all "$r"
+  _setup "$r" "$s" "$c" plan
+  assert_exit 0
+  assert_contains "$OUT" "-${TAB}lizard${TAB}$(lizard_pin)${TAB}"
+}

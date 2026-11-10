@@ -27,8 +27,15 @@ t_ruby_boolean_sequences() {
 6${TAB}mixed${TAB}2
 10${TAB}mixed_right${TAB}2
 14${TAB}words${TAB}2
-18${TAB}negated${TAB}1
-22${TAB}in_condition${TAB}2"
+18${TAB}negated${TAB}2
+22${TAB}parens${TAB}1
+26${TAB}in_condition${TAB}2"
+}
+
+t_ruby_define_method_blocks_are_units() {
+  assert_eq "$(cog define_method.rb)" "2${TAB}Widget#risky${TAB}3
+10${TAB}Widget.build${TAB}1
+14${TAB}Widget#plain${TAB}1"
 }
 
 t_ruby_rescue_and_ternary_nested_in_blocks() {
@@ -190,4 +197,39 @@ RB
   run_in "$r" env LC_ALL=C LANG=C XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/cafe.rb
   assert_exit 0
   assert_eq "$ERR" ""
+}
+
+t_ruby_a_scorer_crash_is_a_failure_not_clean() {
+  local r bin; r="$(ruby_repo cognitive/ruby/over.rb:src/over.rb)" || exit $?; bin="$TEST_TMP/fake"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "boom: first" >&2\necho "second line" >&2\nexit 1\n' > "$bin/ruby"
+  chmod +x "$bin/ruby"
+  run_in "$r" env PATH="$bin:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/over.rb
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "boom: first"
+}
+
+t_ruby_a_file_the_scorer_chokes_on_is_unchecked_and_the_rest_is_still_scored() {
+  local r i; r="$(ruby_repo cognitive/ruby/over.rb:src/over.rb)" || exit $?
+  add_file "$r" src/locked.rb "def a; end"
+  chmod 000 "$r/src/locked.rb"
+  { printf 'def deep\n  x = 1'; i=0; while [ $i -lt 10000 ]; do printf ' + 1'; i=$((i + 1)); done; printf '\nend\n'; } > "$r/src/deep.rb"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/locked.rb src/deep.rb src/over.rb
+  chmod 644 "$r/src/locked.rb"
+  assert_exit 1
+  assert_eq "$OUT" "src/over.rb:2${TAB}ruby${TAB}Sample#risky${TAB}cognitive${TAB}16${TAB}15${TAB}skill default"
+  assert_contains "$ERR" "complexity: src/locked.rb could not be parsed — unchecked"
+  assert_contains "$ERR" "complexity: src/deep.rb could not be parsed — unchecked"
+  assert_not_contains "$ERR" "stack level"
+}
+
+t_ruby_scorer_runs_from_a_temp_dir() {
+  local r; r="$(ruby_repo cognitive/ruby/over.rb:src/over.rb)" || exit $?
+  add_file "$r" src/pwd.rb "def a; end"
+  mkdir -p "$TEST_TMP/fake"
+  printf '#!/bin/sh\npwd > "%s/cwd"\nexec /usr/bin/env -i PATH="$PATH" "%s" "$@"\n' "$TEST_TMP" "$(command -v ruby)" > "$TEST_TMP/fake/ruby"
+  chmod +x "$TEST_TMP/fake/ruby"
+  run_in "$r" env PATH="$TEST_TMP/fake:$PATH" XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/over.rb
+  case "$(cat "$TEST_TMP/cwd")" in "$(cd "$r" && pwd -P)"|"$r") fail "the scorer ran in the repo: $(cat "$TEST_TMP/cwd")" ;; esac
 }

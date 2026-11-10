@@ -29,6 +29,7 @@ class CognitiveScorer
     when :defs then score_def(node[3], node[5], ns, '.')
     when :class, :module then find(node.drop(2), ns + [const_name(node[1])])
     when :sclass then find(node.drop(2), ns, '.')
+    when :method_add_block then score_define_method(node, ns, sep) || node.drop(1).each { |n| find(n, ns, sep) }
     else node.drop(1).each { |n| find(n, ns, sep) }
     end
   end
@@ -51,6 +52,25 @@ class CognitiveScorer
     @unit = unit
     walk(body, 0)
     @unit = outer
+  end
+
+  # define_method(:name) { } / define_singleton_method(:name) { }: the block is the method's body.
+  def score_define_method(node, ns, sep)
+    call = node[1]
+    head = call[0] == :method_add_arg ? call[1] : call
+    return unless %i[fcall command].include?(head[0]) && head[1].is_a?(Array)
+    kind = head[1][1]
+    return unless %w[define_method define_singleton_method].include?(kind)
+    args = call[2]
+    args = args[1] if args.is_a?(Array) && args[0] == :arg_paren
+    list = args.is_a?(Array) && args[0] == :args_add_block && args[1]
+    sym = list.is_a?(Array) && list[0]
+    return unless sym.is_a?(Array) && sym[0] == :symbol_literal
+    name = sym[1][1][1]
+    sep = '.' if kind == 'define_singleton_method'
+    block = node[2]
+    score_def([nil, name, head[1][2]], block.drop(1), ns, sep)
+    true
   end
 
   def inc(n)
@@ -122,14 +142,12 @@ class CognitiveScorer
     node.is_a?(Array) && node[0] == :var_ref && node[1][0, 2] == [:@kw, 'self']
   end
 
-  # A boolean expression read left to right through parens and !, as its operators and its operands
+  # A boolean expression read left to right through parens, as its operators and its operands (a ! is an operand)
   def flatten(node, ops, leaves)
     if node[0] == :binary && LOGIC[node[2]]
       flatten(node[1], ops, leaves)
       ops << LOGIC[node[2]]
       flatten(node[3], ops, leaves)
-    elsif node[0] == :unary && %i[! not].include?(node[1])
-      flatten(node[2], ops, leaves)
     elsif node[0] == :paren && node[1].is_a?(Array) && node[1].size == 1 && node[1][0].is_a?(Array)
       flatten(node[1][0], ops, leaves)
     else
@@ -167,14 +185,15 @@ root = ARGV.shift
 status = 0
 ARGV.each do |path|
   rel = path.sub("#{root}/", '')
-  sexp = Ripper.sexp(File.read(path, encoding: Encoding::UTF_8))
-  unless sexp
+  begin
+    sexp = Ripper.sexp(File.read(path, encoding: Encoding::UTF_8))
+    raise ArgumentError unless sexp
+    scorer = CognitiveScorer.new
+    scorer.run(sexp)
+    scorer.units.each { |u| puts "#{rel}:#{u[:line]}\t#{u[:name]}\t#{u[:score]}" }
+  rescue StandardError, SystemStackError
     warn "complexity: #{rel} could not be parsed — unchecked"
     status = 2
-    next
   end
-  scorer = CognitiveScorer.new
-  scorer.run(sexp)
-  scorer.units.each { |u| puts "#{rel}:#{u[:line]}\t#{u[:name]}\t#{u[:score]}" }
 end
 exit status

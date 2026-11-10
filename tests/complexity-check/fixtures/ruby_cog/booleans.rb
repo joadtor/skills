@@ -16,7 +16,11 @@ def words(a, b, c)
 end                    # 2
 
 def negated(a, b, c)
-  a && !(b && c)       # +1: ! and the parens are skipped, so it reads && &&
+  a && !(b && c)       # +1 (&&) +1 (the negated group is its own sequence)
+end                    # 2
+
+def parens(a, b, c)
+  a && (b && c)        # +1: plain parens are skipped, so it reads && &&
 end                    # 1
 
 def in_condition(a, b)

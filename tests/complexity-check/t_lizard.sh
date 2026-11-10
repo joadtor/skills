@@ -109,41 +109,49 @@ t_lizard_never_interferes() {
 # lizard exits 0 with no output and no warning on broken input, so the script cross-checks files with no
 # functions using the language's own read-only syntax check.
 t_lizard_unparsable_reported() {
-  skip_unless_cmd ruby
   local r; r="$(lizard_repo)" || exit $?
-  add_file "$r" src/broken.rb - <<'RB'
-class Broken
-  def risky(x)
-    if x
-      1
-  end
-RB
-  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/broken.rb
+  add_file "$r" src/broken.py - <<'PY'
+x = (1,
+PY
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/broken.py
   assert_exit 2
-  assert_contains "$ERR" "complexity: src/broken.rb could not be parsed — unchecked"
+  assert_contains "$ERR" "complexity: src/broken.py could not be parsed — unchecked"
   assert_eq "$OUT" ""
 }
 
 t_lizard_syntax_check_runs_no_repo_code() {
-  skip_unless_cmd ruby
-  local r marker; r="$(lizard_repo)" || exit $?; marker="$TEST_TMP/shebang-ran"
-  add_file "$r" evil.rb "File.write('$marker', 'x')"
-  add_file "$r" src/trap.rb - <<RB
-#!/usr/bin/env ruby -r$r/evil.rb
-class Trap
-  def risky(x)
-    if x
-RB
-  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/trap.rb
-  [ ! -e "$marker" ] || fail "the syntax check loaded code named by the file's shebang"
-  assert_contains "$ERR" "src/trap.rb could not be parsed"
+  local r marker; r="$(lizard_repo)" || exit $?; marker="$TEST_TMP/ast-imported"
+  add_file "$r" ast.py "open('$marker', 'w').close()"
+  add_file "$r" src/trap.py - <<'PY'
+x = (1,
+PY
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/trap.py
+  [ ! -e "$marker" ] || fail "the syntax check imported a repo file"
+  assert_contains "$ERR" "src/trap.py could not be parsed"
 }
 
 t_lizard_valid_file_without_functions_is_not_unchecked() {
-  skip_unless_cmd ruby
   local r; r="$(lizard_repo)" || exit $?
-  add_file "$r" src/consts.rb "LIMIT = 15"
-  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/none" PATH="$(dirname "$(command -v ruby)"):$TEST_CACHE/joadtor/complexity-check/bin:/usr/bin:/bin" "$LIZARD_SH" src/consts.rb
+  add_file "$r" src/consts.py "LIMIT = 15"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/consts.py
   assert_exit 0
+  assert_not_contains "$ERR" "could not be parsed"
+}
+
+# fake_lizard <dir> <version> <exit-status>: a PATH lizard that prints nothing and fails (a broken install)
+fake_lizard() {
+  mkdir -p "$1"
+  printf '#!/bin/sh\n[ "$1" = --version ] && { echo %s; exit 0; }\necho "Traceback: boom" >&2\necho "second line" >&2\nexit %s\n' "$2" "$3" > "$1/lizard"
+  chmod +x "$1/lizard"
+}
+
+t_lizard_tool_failure_is_exit_2_not_clean() {
+  local r; r="$(fixture)"
+  copy_fixture "$r" cognitive/ruby/over.rb src/over.rb
+  fake_lizard "$TEST_TMP/fake" 1.25.0 1
+  run_in "$r" env PATH="$TEST_TMP/fake:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/none" "$LIZARD_SH" src/over.rb
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_contains "$ERR" "Traceback: boom"
   assert_not_contains "$ERR" "could not be parsed"
 }

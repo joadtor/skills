@@ -168,3 +168,18 @@ t_check_lizard_absent_after_own_tool_exit_4() {
   assert_exit 0
   assert_contains "$ERR" "skipped Go (not supported)"
 }
+
+t_check_exit_2_over_named_unchecked_files_is_not_a_tool_failure() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" app/a.rb "x"; add_file "$r" app/b.rb "x"; commit_all "$r"
+  stub "$LD" ruby 'echo "complexity: app/b.rb could not be parsed — unchecked" >&2; exit 2'
+  check "$r"
+  assert_exit 0
+  assert_contains "$ERR" "complexity: app/b.rb could not be parsed — unchecked"
+  assert_not_contains "$ERR" "skipped"
+  assert_not_contains "$ERR" "tool failed"
+  assert_contains "$ERR" "complexity: clean — 1 file(s) unchecked"
+  stub "$LD" ruby 'echo "boom" >&2; exit 2'
+  check "$r"
+  assert_contains "$ERR" "skipped Ruby (tool failed, exit 2) — unchecked: app/a.rb app/b.rb"
+}

@@ -6,11 +6,11 @@
 #   NLOC,CCN,tokens,params,length,"name@start-end@file","file","name","long name",start,end,COGNITIVE
 # Cognitive is the LAST column; the long name contains commas, so rows are parsed from the right and
 # the name/file come from the location field. Names are lizard's own and unqualified (no class prefix)
-# for Ruby, TS, Python, Go and Rust alike (`risky`, not `Sample#risky`).
+# for TS, Python, Go and Rust alike (`risky`, not `Sample#risky`).
 # lizard runs from a temp dir with PYTHONSAFEPATH=1 and no PYTHONPATH so project files (json.py,
 # lizard_ext/...) are never imported.
 # On broken input lizard prints no row and no warning (exit 0), so a file with no rows is cross-checked with
-# its language's own read-only syntax check (ruby -c, python ast, gofmt -e); a failure means "unchecked"
+# its language's own read-only syntax check (python ast, gofmt -e); a failure means "unchecked"
 # (exit 2 when nothing was over). JS/TS and Rust have no cheap checker: their parse is not verified.
 . "$(dirname "${BASH_SOURCE[0]}")/../_common.sh" || exit 1
 
@@ -22,6 +22,9 @@ args=()
 for f in "$@"; do f=${f#./}; args+=("$root/$f"); done
 
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+(cd "$tmp" && env -u PYTHONPATH PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1 "$lizard" -Ecognitive --csv "${args[@]}") >"$tmp/rows" 2>"$tmp/err"
+st=$?
+[ $st -eq 0 ] || { head -n 3 "$tmp/err" >&2; exit 2; }
 over=0 seen=$'\n'
 while IFS= read -r row; do
   cog=${row##*,}; rest=${row%,*}
@@ -37,7 +40,7 @@ while IFS= read -r row; do
   [ "$cog" -gt "$limit" ] || continue
   printf '%s:%s\t%s\t%s\tcognitive\t%s\t%s\tskill default\n' "$file" "$start" "$lang" "$head" "$cog" "$limit"
   over=1
-done < <(cd "$tmp" && env -u PYTHONPATH PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1 "$lizard" -Ecognitive --csv "${args[@]}")
+done <"$tmp/rows"
 
 unparsed=0
 for f in "$@"; do
@@ -45,8 +48,6 @@ for f in "$@"; do
   case "$seen" in *$'\n'"$f"$'\n'*) continue ;; esac
   p=$PWD/$f # absolute: never read as an option, and still valid from $tmp
   case $(lang_of "$f") in
-    # Compile the text instead of `ruby -c file`, so the file is never Ruby's script and its shebang switches never apply.
-    ruby)   command -v ruby >/dev/null 2>&1 && ! (cd "$tmp" && ruby --disable-gems -e 'RubyVM::InstructionSequence.compile(File.read(ARGV[0]))' -- "$p") >/dev/null 2>&1 ;;
     python) command -v python3 >/dev/null 2>&1 && ! python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$p" >/dev/null 2>&1 ;;
     go)     command -v gofmt >/dev/null 2>&1 && ! gofmt -e "$p" >/dev/null 2>&1 ;;
     *)      false ;;

@@ -130,3 +130,18 @@ echo \"\$@\" >> '$calls'"
   assert_exit 0
   assert_eq "$(cat "$calls")" "--version"
 }
+
+t_python_unparsable_file_is_unchecked_not_clean() {
+  need_complexipy
+  local repo; repo=$(python_repo "[tool.complexipy]
+max-complexity-allowed = 20")
+  add_file "$repo" app/broken.py 'x = (1,'
+  run_in "$repo" "$SCRIPTS/lang/python.sh" app/broken.py app/c18.py
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: app/broken.py could not be parsed — unchecked"
+  run_in "$repo" "$SCRIPTS/lang/python.sh" app/broken.py app/c22.py
+  assert_exit 1
+  assert_contains "$OUT" "app/c22.py:1"
+  assert_eq "$ERR" "complexity: app/broken.py could not be parsed — unchecked"
+}

@@ -87,6 +87,21 @@ for r in json.load(open(sys.argv[3])):
                      m.group(1).replace("::", "."), "cognitive", m.group(2), limit, src]))
 ' "$limit" "$src" "$tmp/out.json") || exit 2
 
-[ -z "$hits" ] && exit 0
-printf '%s\n' "$hits"
-exit 1
+# complexipy reports only offenders, so a file it could not parse reads as clean: check syntax read-only.
+unparsed=$(python3 -I -c '
+import ast, sys
+for f in sys.argv[1:]:
+    try:
+        ast.parse(open(f, "rb").read())
+    except (SyntaxError, ValueError, OSError):
+        print(f)
+' "$@")
+while IFS= read -r f; do
+  [ -n "$f" ] && echo "complexity: $f could not be parsed — unchecked" >&2
+done <<EOF2
+$unparsed
+EOF2
+
+[ -n "$hits" ] && { printf '%s\n' "$hits"; exit 1; }
+[ -n "$unparsed" ] && exit 2
+exit 0

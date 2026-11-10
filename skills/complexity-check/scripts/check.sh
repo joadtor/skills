@@ -13,6 +13,8 @@
 #           file:line  lang  function  metric  score  limit  source   (metric is always "cognitive";
 #           source: where the limit came from, e.g. "skill default", "pyproject.toml")
 #   stderr  notices to pass through (e.g. "<file> could not be parsed — unchecked")
+#           (exit 2 with such notices = those files unchecked, not a tool failure; the JS script also
+#           names files its ESLint config does not cover: "not covered by the project's ESLint config — unchecked")
 #   exit    0 nothing over · 1 offenders printed · 3 tool missing (first stderr line = reason)
 #           · 4 the project has no configured cognitive tool of its own -> check.sh sends that
 #             language's files to lang/lizard.sh, which follows this same contract (without 4)
@@ -33,7 +35,7 @@ pretty() {
   esac
 }
 
-over=0 skipped=0
+over=0 skipped=0 unchecked=0
 skip() { skipped=$((skipped + 1)); echo "complexity: skipped $(pretty "$1") ($2) — unchecked: $3" >&2; }
 
 # run_script <script> <file>... — sets status, out, reason; forwards the script's notices
@@ -43,6 +45,7 @@ run_script() {
   errf=$(mktemp "${TMPDIR:-/tmp}/cc-err.XXXXXX")
   out=$("$script" "$@" 2>"$errf"); status=$?
   reason=$(head -n 1 "$errf")
+  named=$(grep -c ' — unchecked$' "$errf")
   [ $status -ne 3 ] && [ -s "$errf" ] && cat "$errf" >&2
   rm -f "$errf"
 }
@@ -56,6 +59,9 @@ finish() {
            *"not found"*|*"not installed"*|*"not available"*) skip "$lang" "$reason — run setup" "$*" ;;
            *) skip "$lang" "${reason:-no tool}" "$*" ;;
          esac ;;
+    2)   if [ "$named" -gt 0 ]; then unchecked=$((unchecked + named))
+         else skip "$lang" "tool failed, exit 2" "$*"
+         fi ;;
     *)   skip "$lang" "tool failed, exit $status" "$*" ;;
   esac
 }
@@ -84,6 +90,7 @@ done
 
 note=""
 [ $skipped -gt 0 ] && note=" — $skipped language(s) skipped"
+[ $unchecked -gt 0 ] && note="$note — $unchecked file(s) unchecked"
 if [ $over -gt 0 ]; then
   echo "complexity: $over function(s) over the limit$note" >&2
   exit 1
