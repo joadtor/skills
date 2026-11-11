@@ -233,3 +233,37 @@ t_ruby_scorer_runs_from_a_temp_dir() {
   run_in "$r" env PATH="$TEST_TMP/fake:$PATH" XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/over.rb
   case "$(cat "$TEST_TMP/cwd")" in "$(cd "$r" && pwd -P)"|"$r") fail "the scorer ran in the repo: $(cat "$TEST_TMP/cwd")" ;; esac
 }
+
+t_ruby_end_to_end_a_broken_file_is_named_unchecked_beside_a_measured_one() {
+  local r; r="$(ruby_repo cognitive/ruby/at_limit.rb:src/fine.rb)" || exit $?
+  add_file "$r" src/broken.rb - <<'RB'
+def risky(x)
+  if x
+    1
+RB
+  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/cache" "$SCRIPTS/check.sh"
+  assert_exit 0
+  assert_eq "$OUT" ""
+  assert_contains "$ERR" "complexity: src/broken.rb could not be parsed — unchecked"
+  assert_not_contains "$ERR" "fine.rb"
+  assert_contains "$ERR" "complexity: clean — 1 file(s) unchecked"
+  copy_fixture "$r" cognitive/ruby/over.rb src/over.rb
+  run_in "$r" env XDG_CACHE_HOME="$TEST_TMP/cache" "$SCRIPTS/check.sh"
+  assert_exit 1
+  assert_eq "$OUT" "src/over.rb:2${TAB}ruby${TAB}Sample#risky${TAB}cognitive${TAB}16${TAB}15${TAB}skill default"
+  assert_contains "$ERR" "complexity: src/broken.rb could not be parsed — unchecked"
+  assert_contains "$ERR" "complexity: 1 function(s) over the limit — 1 file(s) unchecked"
+}
+
+t_ruby_differential_regressions() {
+  assert_eq "$(cog regressions.rb)" "4${TAB}and_or${TAB}2
+8${TAB}or_and${TAB}2
+12${TAB}and_or_and${TAB}3
+16${TAB}negated_runs${TAB}2
+20${TAB}grouped_left${TAB}2
+24${TAB}grouped_both${TAB}3
+28${TAB}f${TAB}2
+30${TAB}lambda_in_method${TAB}3
+41${TAB}break_in_loop${TAB}2
+47${TAB}modifier_while${TAB}1"
+}

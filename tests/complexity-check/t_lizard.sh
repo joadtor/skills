@@ -155,3 +155,87 @@ t_lizard_tool_failure_is_exit_2_not_clean() {
   assert_contains "$ERR" "Traceback: boom"
   assert_not_contains "$ERR" "could not be parsed"
 }
+
+# fake_lizard_rows <dir>: a PATH lizard 1.25.0 that prints one canned --csv row per file it is given:
+# cognitive 16 for over.*, 15 for at_limit.*, function "risky" at lines 2-9
+fake_lizard_rows() {
+  mkdir -p "$1"
+  cat > "$1/lizard" <<'SH'
+#!/bin/sh
+[ "$1" = --version ] && { echo 1.25.0; exit 0; }
+for f in "$@"; do
+  case $f in
+    */over.*) c=16 ;;
+    */at_limit.*) c=15 ;;
+    *) continue ;;
+  esac
+  echo "9,3,40,1,8,\"risky@2-9@$f\",\"$f\",\"risky\",\"risky( x )\",2,9,$c"
+done
+SH
+  chmod +x "$1/lizard"
+}
+
+# keep_node <dir>: a dir holding only the real node binary (the nodenv shim needs nodenv on PATH)
+keep_node() {
+  mkdir -p "$1"
+  ln -sf "$(node -p process.execPath)" "$1/node"
+}
+
+lizard_fake_repo() {
+  local r; r="$(fixture)"
+  copy_fixture "$r" cognitive/ts/over.ts src/over.ts
+  copy_fixture "$r" cognitive/ts/at_limit.ts src/at_limit.ts
+  copy_fixture "$r" cognitive/py/over.py src/over.py
+  copy_fixture "$r" cognitive/py/at_limit.py src/at_limit.py
+  copy_fixture "$r" cognitive/go/over.go src/over.go
+  copy_fixture "$r" cognitive/go/at_limit.go src/at_limit.go
+  copy_fixture "$r" cognitive/rs/over.rs src/over.rs
+  copy_fixture "$r" cognitive/rs/at_limit.rs src/at_limit.rs
+  echo "$r"
+}
+
+lizard_fake_expected() {
+  local l
+  for l in "ts js" "py python" "go go" "rs rust"; do
+    printf 'src/over.%s:2\t%s\trisky\tcognitive\t16\t15\tskill default\n' "${l% *}" "${l#* }"
+  done
+}
+
+t_lizard_fake_end_to_end_reports_every_language_without_network() {
+  local r; r="$(lizard_fake_repo)"
+  fake_lizard_rows "$TEST_TMP/fake"
+  run_in "$r" env PATH="$TEST_TMP/fake:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/none" RUSTUP_AUTO_INSTALL=0 "$SCRIPTS/check.sh"
+  assert_exit 1
+  assert_eq "$OUT" "$(lizard_fake_expected)"
+  assert_contains "$ERR" "complexity: 4 function(s) over the limit"
+  assert_not_contains "$ERR" "skipped"
+}
+
+t_lizard_fake_end_to_end_unconfigured_eslint_falls_to_lizard() {
+  skip_unless_cmd node
+  local r; r="$(lizard_fake_repo)"
+  fake_lizard_rows "$TEST_TMP/fake"; keep_node "$TEST_TMP/node"
+  add_file "$r" .gitignore "node_modules/"
+  add_file "$r" node_modules/.bin/eslint '#!/bin/sh
+[ "$1" = --print-config ] && { echo "{\"rules\":{\"no-unused-vars\":2}}"; exit 0; }
+echo "eslint must not lint" >&2; exit 2'
+  chmod +x "$r/node_modules/.bin/eslint"
+  run_in "$r" env PATH="$TEST_TMP/fake:$TEST_TMP/node:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/none" RUSTUP_AUTO_INSTALL=0 "$SCRIPTS/check.sh"
+  assert_exit 1
+  assert_eq "$OUT" "$(lizard_fake_expected)"
+  assert_not_contains "$ERR" "must not lint"
+  assert_not_contains "$ERR" "unchecked"
+}
+
+t_lizard_forgives_comment_exempts_the_function() {
+  local r; r="$(lizard_repo)" || exit $?
+  copy_fixture "$r" cognitive/py/over.py src/over.py
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/over.py
+  assert_exit 1
+  sed -i.bak '2i\
+    # #lizard forgives -- flat dispatch, reviewed
+' "$r/src/over.py"
+  run_in "$r" env XDG_CACHE_HOME="$TEST_CACHE" "$LIZARD_SH" src/over.py
+  assert_exit 0
+  assert_eq "$OUT" ""
+}

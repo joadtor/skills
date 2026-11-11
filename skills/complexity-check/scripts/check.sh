@@ -54,7 +54,8 @@ run_script() {
 finish() {
   local lang=$1; shift
   case $status in
-    0|1) [ -n "$out" ] && { printf '%s\n' "$out"; over=$((over + $(printf '%s\n' "$out" | wc -l))); } ;;
+    0|1) unchecked=$((unchecked + named))
+         [ -n "$out" ] && { printf '%s\n' "$out"; over=$((over + $(printf '%s\n' "$out" | wc -l))); } ;;
     3)   case $reason in
            *"not found"*|*"not installed"*|*"not available"*) skip "$lang" "$reason — run setup" "$*" ;;
            *) skip "$lang" "${reason:-no tool}" "$*" ;;

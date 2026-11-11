@@ -182,3 +182,36 @@ t_common_resolve_rejects_a_lizard_below_the_cognitive_minimum() {
     assert_eq "$OUT" "lizard" "PATH lizard $v is accepted"
   done
 }
+
+t_common_features_dir_skipped_only_at_the_top_level() {
+  local r; r="$(fixture)"
+  add_file "$r" features/step_definitions/steps.rb "x"
+  add_file "$r" src/features/x.rb "x"
+  add_file "$r" app/features/x.ts "x"
+  commit_all "$r" "features"
+  _common "$r" target_files
+  assert_eq "$OUT" "app/features/x.ts
+src/features/x.rb"
+}
+
+t_common_build_dist_target_vendor_fixtures_skipped_at_any_depth() {
+  local r d; r="$(fixture)"
+  for d in build dist target vendor fixtures; do
+    add_file "$r" "$d/a.rb" "x"
+    add_file "$r" "src/$d/a.rb" "x"
+  done
+  add_file "$r" app/keep.rb "x"
+  commit_all "$r" "skipped"
+  _common "$r" target_files
+  assert_eq "$OUT" "app/keep.rb"
+}
+
+t_common_base_branch_order_is_develop_master_main() {
+  local r; r="$(fixture)"
+  (cd "$r" && git push -q origin main:master) >/dev/null 2>&1
+  _common "$r" base_branch
+  assert_eq "$OUT" "master" "master beats main"
+  (cd "$r" && git push -q origin main:develop) >/dev/null 2>&1
+  _common "$r" base_branch
+  assert_eq "$OUT" "develop" "develop beats master"
+}

@@ -9,16 +9,16 @@ t_check_exit_codes() {
   add_file "$r" app/a.rb "x"; commit_all "$r"
   stub "$LD" ruby 'exit 0'
   check "$r"; assert_exit 0; assert_contains "$ERR" "complexity: clean"
-  stub "$LD" ruby 'printf "app/a.rb:1\truby\tA#f\tcyclomatic\t11\t8\tskill default\n"; exit 1'
+  stub "$LD" ruby 'printf "app/a.rb:1\truby\tA#f\tcognitive\t16\t15\tskill default\n"; exit 1'
   check "$r"; assert_exit 1
-  stub "$LD" ruby 'echo "rubocop not found" >&2; exit 3'
+  stub "$LD" ruby 'echo "ruby not installed" >&2; exit 3'
   check "$r"; assert_exit 0
 }
 
 t_check_missing_tool_skipped() {
   local r bin; r="$(fixture)"; LD="$(mktmp)"; bin="$(mktmp)"
   add_file "$r" cmd/main.go "x"; commit_all "$r"
-  stub "$LD" go 'echo "gocyclo not found" >&2; exit 3'
+  stub "$LD" go 'echo "lizard not installed" >&2; exit 3'
   for c in curl npm gem go uv; do
     printf '#!/bin/sh\necho "$0 $*" >> "%s/calls"\n' "$bin" > "$bin/$c"; chmod +x "$bin/$c"
   done
@@ -33,7 +33,7 @@ t_check_missing_tool_skipped() {
 t_check_offender_fields() {
   local r line; r="$(fixture)"; LD="$(mktmp)"
   add_file "$r" app/models/order.rb "x"; commit_all "$r"
-  line="app/models/order.rb:42	ruby	Order#total	cyclomatic	11	8	skill default"
+  line="app/models/order.rb:42	ruby	Order#total	cognitive	16	15	skill default"
   stub "$LD" ruby "printf '%s\\n' '$line'; exit 1"
   check "$r"
   assert_eq "$OUT" "$line"
@@ -84,7 +84,7 @@ t_check_no_base_branch_is_an_error() {
   local r; r="$(fixture)"; LD="$(mktmp)"
   (cd "$r" && git remote remove origin) >/dev/null 2>&1
   add_file "$r" app/a.rb "x"; commit_all "$r"
-  stub "$LD" ruby 'printf "app/a.rb:1\truby\tA#f\tcyclomatic\t11\t8\tskill default\n"; exit 1'
+  stub "$LD" ruby 'printf "app/a.rb:1\truby\tA#f\tcognitive\t16\t15\tskill default\n"; exit 1'
   check "$r"
   assert_exit 2
   assert_contains "$ERR" "complexity: can't find the base branch on origin — pass a path or fetch origin"
@@ -182,4 +182,12 @@ t_check_exit_2_over_named_unchecked_files_is_not_a_tool_failure() {
   stub "$LD" ruby 'echo "boom" >&2; exit 2'
   check "$r"
   assert_contains "$ERR" "skipped Ruby (tool failed, exit 2) — unchecked: app/a.rb app/b.rb"
+}
+
+t_check_no_changed_files_is_clean() {
+  local r; r="$(fixture)"
+  run_in "$r" "$SCRIPTS/check.sh"
+  assert_exit 0
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: clean"
 }

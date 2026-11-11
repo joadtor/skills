@@ -20,6 +20,8 @@ The project's own cognitive tool wins when it is **configured** — installed an
 
 **Why 15:** SonarSource's default, and also sonarjs's, Biome's and complexipy's. **Why lizard:** one tool for every language; on the same functions it scored exactly what gocognit, complexipy and sonarjs score (10/10/10 flat, 15/15/15 and 11/11 nested). **Why not lizard for Ruby:** its Ruby parser ignores nesting (a nested method scored 4–5 where the same shape scores 11 elsewhere). Ruby gets the skill's own scorer instead: SonarSource's rules over Ruby's built-in parser (Ripper) — it parses, never runs, and needs nothing beyond Ruby. Two Ruby notes: a block (`each do`) raises nesting but isn't a loop, so a body under `items.each do` scores one less than under `for`; and `x rescue y` counts like a `rescue`. A `define_method(:name)` / `define_singleton_method(:name)` block is scored as its own method; other class- or top-level blocks (Sinatra routes, `scope -> {}`, `validate do`) are not measured. Clippy is used only when the project configures it — its "cognitive" score drifts from SonarSource's (16 where the others score 20), and its own docs say the lint doesn't measure what its name says.
 
+The Ruby 3 pattern-match guard (`in X if cond`) is scored as a modifier `if` at the clause's nesting — a design choice; no reference tool covers it. A project's own tool may count differently from the whitepaper (sonarjs, for one, charges neither `||` runs nor recursion): its numbers are the project's.
+
 A project tool that is configured but not installed (no `node_modules`, no venv) is never installed by the skill: `setup.sh plan` notes it, and lizard measures that language until the project's dependencies are installed.
 
 ## Trust and staying local

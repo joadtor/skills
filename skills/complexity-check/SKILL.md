@@ -71,7 +71,7 @@ Clean → stop and report. Still over → next round, up to **3**.
 
 ## 5. After round 3 — the user decides
 
-For each function still over its limit, a short report: score vs limit and source, what the rounds tried, and why it is still over. Recommend one of: **refactor further** (with a concrete plan) · **exempt it** with a disable comment that states the reason · **accept as is** · **raise the limit** in the project config. Ask with `AskUserQuestion`, your recommendation first. No disable comment and no config change without the user's answer.
+For each function still over its limit, a short report: score vs limit and source, what the rounds tried, and why it is still over. Recommend one of: **refactor further** (with a concrete plan) · **exempt it** with a disable comment that states the reason · **accept as is** · **raise the limit** in the project config. Ask with `AskUserQuestion`, your recommendation first. No disable comment and no config change without the user's answer. For a function measured by the Ruby scorer (source `skill default`, lang `ruby`) there is no exemption comment yet, so offer only the other options.
 
 ## Common Mistakes
 

@@ -67,6 +67,8 @@ Rules the dispatch carries:
 
 **Before the first wave, set up the complexity tools** — invoke `complexity-check setup`, passing the plan's task file paths (the languages come from their extensions). It's the run's one consent point: the user approves or declines missing tools once, in the main session, and every later check runs offline. Record declined languages in the progress file as unchecked.
 
+Complexity is never checked per task — only this setup and the finish loop measure it.
+
 Execute **continuously** — wave after wave, no pausing to ask "should I continue?". Decide small ambiguities yourself and log them.
 
 **Stop and ask only for:** a task at the 2-round cap; a function still over its complexity limit after the finish loop's 3 rounds; an irreversible or destructive operation; a push, publish, or merge to a shared branch; a plan so broken every path is a guess (plus the upfront no-plan and shared-branch gates).
