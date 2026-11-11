@@ -10,29 +10,39 @@
 detect=0
 [ "${1:-}" = --detect ] && { detect=1; shift; }
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-js.XXXXXX") || exit 2
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-js.XXXXXX") || exit 6
 trap 'rm -rf "$tmp"' EXIT
 
-# Prints the rule's numeric limit, or "default", when sonarjs/cognitive-complexity is on for the file; nothing when off.
-eslint_limit() {
-  node_modules/.bin/eslint --print-config "$1" 2> /dev/null | node -e '
-    let rule;
-    try { rule = (JSON.parse(require("fs").readFileSync(0, "utf8")).rules || {})["sonarjs/cognitive-complexity"]; } catch (e) { process.exit(0); }
-    const [sev, opt] = Array.isArray(rule) ? rule : [rule];
-    if (sev === undefined || sev === 0 || sev === "off") process.exit(0);
-    console.log(Number.isInteger(opt) && opt > 0 ? opt : "default");
-  '
+# One "<limit>|default|-<TAB><file>" line per file: the sonarjs/cognitive-complexity limit, or "-" when the rule is off or the
+# config does not cover the file. All files are resolved in one node process through the project's own ESLint API.
+eslint_limits() {
+  node -e '
+    const path = require("path");
+    (async () => {
+      const { ESLint } = require(path.resolve("node_modules/eslint"));
+      const eslint = new ESLint({ cwd: process.cwd() });
+      for (const f of process.argv.slice(1)) {
+        let rule;
+        try { rule = (((await eslint.calculateConfigForFile(f)) || {}).rules || {})["sonarjs/cognitive-complexity"]; } catch (e) {}
+        const [sev, opt] = Array.isArray(rule) ? rule : [rule];
+        const off = sev === undefined || sev === 0 || sev === "off";
+        console.log((off ? "-" : Number.isInteger(opt) && opt > 0 ? opt : "default") + "\t" + f);
+      }
+    })().catch((e) => { console.error("eslint API failed: " + (e && e.message)); process.exit(1); });
+  ' "$@"
 }
 
 if [ -n "$(local_tool node_modules/.bin/eslint)" ]; then
   : > "$tmp/covered"
   uncovered=()
-  for f in "$@"; do
-    c=$(eslint_limit "$f")
-    if [ -z "$c" ]; then uncovered+=("$f"); continue; fi
+  limits=$(eslint_limits "$@" 2>"$tmp/err") || { cat "$tmp/err" >&2; exit 6; }
+  while IFS=$'\t' read -r c f; do
+    if [ "$c" = - ]; then uncovered+=("$f"); continue; fi
     [ $detect = 1 ] && exit 0
     printf '%s\t%s\n' "$c" "$f" >> "$tmp/covered"
-  done
+  done <<EOF3
+$limits
+EOF3
   if [ -s "$tmp/covered" ]; then
     : > "$tmp/offenders"
     unchecked=0
@@ -48,7 +58,7 @@ if [ -n "$(local_tool node_modules/.bin/eslint)" ]; then
         [ "$c" = "$configured" ] && group+=("$f")
       done < "$tmp/covered"
       node_modules/.bin/eslint --format json "${group[@]}" > "$tmp/out.json" 2> "$tmp/err"
-      [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 2; }
+      [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 6; }
       LIMIT=$limit SRC=$src node -e '
         const fs = require("fs"), path = require("path");
         let bad = false;
@@ -105,7 +115,7 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
     limit=$(default_limit js) src="skill default"
     [ "$configured" != default ] && { limit=$configured; src=$cfgfile; }
     node_modules/.bin/biome lint --reporter=json "$@" > "$tmp/out.json" 2> "$tmp/err"
-    [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 2; }
+    [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 6; }
     LIMIT=$limit SRC=$src node -e '
       const fs = require("fs"), path = require("path");
       const raw = fs.readFileSync(process.argv[1], "utf8");

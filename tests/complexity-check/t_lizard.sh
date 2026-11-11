@@ -145,12 +145,12 @@ fake_lizard() {
   chmod +x "$1/lizard"
 }
 
-t_lizard_tool_failure_is_exit_2_not_clean() {
+t_lizard_tool_failure_is_exit_6_not_clean() {
   local r; r="$(fixture)"
   copy_fixture "$r" cognitive/ruby/over.rb src/over.rb
   fake_lizard "$TEST_TMP/fake" 1.25.0 1
   run_in "$r" env PATH="$TEST_TMP/fake:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/none" "$LIZARD_SH" src/over.rb
-  assert_exit 2
+  assert_exit 6
   assert_eq "$OUT" ""
   assert_contains "$ERR" "Traceback: boom"
   assert_not_contains "$ERR" "could not be parsed"
@@ -217,9 +217,9 @@ t_lizard_fake_end_to_end_unconfigured_eslint_falls_to_lizard() {
   fake_lizard_rows "$TEST_TMP/fake"; keep_node "$TEST_TMP/node"
   add_file "$r" .gitignore "node_modules/"
   add_file "$r" node_modules/.bin/eslint '#!/bin/sh
-[ "$1" = --print-config ] && { echo "{\"rules\":{\"no-unused-vars\":2}}"; exit 0; }
 echo "eslint must not lint" >&2; exit 2'
   chmod +x "$r/node_modules/.bin/eslint"
+  add_file "$r" node_modules/eslint/index.js "exports.ESLint = class { async calculateConfigForFile() { return { rules: { 'no-unused-vars': 2 } }; } };"
   run_in "$r" env PATH="$TEST_TMP/fake:$TEST_TMP/node:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/none" RUSTUP_AUTO_INSTALL=0 "$SCRIPTS/check.sh"
   assert_exit 1
   assert_eq "$OUT" "$(lizard_fake_expected)"

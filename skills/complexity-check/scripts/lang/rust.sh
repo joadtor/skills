@@ -52,7 +52,7 @@ else
 fi
 
 out=$(CLIPPY_CONF_DIR="$conf" cargo clippy --quiet --message-format=json -- -W clippy::cognitive_complexity); status=$?
-[ $status -ne 0 ] && { echo "cargo clippy failed (offline: dependencies must already be in the local cargo registry)" >&2; exit 2; }
+[ $status -ne 0 ] && { echo "cargo clippy failed (offline: dependencies must already be in the local cargo registry)" >&2; exit 6; }
 
 hits=$(printf '%s\n' "$out" | python3 -I -c '
 import json, re, sys

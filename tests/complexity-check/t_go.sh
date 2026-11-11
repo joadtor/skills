@@ -276,3 +276,60 @@ func Broken( {'
   assert_eq "$OUT" ""
   assert_eq "$ERR" "complexity: app/broken.go could not be parsed — unchecked"
 }
+
+t_go_gocognit_names_every_unparsable_file_and_still_measures_the_rest() {
+  go_tools
+  local repo; repo=$(go_repo)
+  add_file "$repo" app/a_broken.go 'package app
+func A( {'
+  add_file "$repo" app/b_broken.go 'package app
+func B( {'
+  commit_all "$repo"
+  export XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with gocognit)"
+  run_in "$repo" "$SCRIPTS/lang/go.sh" app/a_broken.go app/b_broken.go app/high.go
+  assert_exit 1
+  assert_contains "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22"
+  assert_contains "$ERR" "complexity: app/a_broken.go could not be parsed — unchecked"
+  assert_contains "$ERR" "complexity: app/b_broken.go could not be parsed — unchecked"
+}
+
+go_golangci_repo_with_broken_sibling() {
+  local repo; repo=$(go_repo)
+  go_enable_gocognit "$repo"
+  add_file "$repo" app/a_broken.go 'package app
+func A( {'
+  commit_all "$repo"
+  echo "$repo"
+}
+
+t_go_golangci_a_syntax_error_marks_every_requested_file_of_the_package_unchecked() {
+  go_tools
+  local repo; repo=$(go_golangci_repo_with_broken_sibling)
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" app/a_broken.go app/high.go
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_contains "$ERR" "complexity: app/a_broken.go could not be parsed — unchecked"
+  assert_contains "$ERR" "complexity: app/high.go could not be parsed — unchecked"
+}
+
+t_go_golangci_a_broken_sibling_not_requested_still_marks_the_requested_file_unchecked() {
+  go_tools
+  local repo; repo=$(go_golangci_repo_with_broken_sibling)
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" app/high.go
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: app/high.go could not be parsed — unchecked"
+}
+
+t_go_golangci_a_plain_type_error_still_lets_gocognit_run() {
+  go_tools
+  local repo; repo=$(go_repo)
+  go_enable_gocognit "$repo"
+  add_file "$repo" app/t.go 'package app
+func T() int { return undefinedVar }'
+  commit_all "$repo"
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" app/t.go app/high.go
+  assert_exit 1
+  assert_contains "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22"
+  assert_eq "$ERR" ""
+}

@@ -71,12 +71,12 @@ if [ $detect = 1 ]; then
 fi
 [ -n "$tool" ] || { echo "complexipy not installed (configured in pyproject.toml)" >&2; exit 3; }
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-py.XXXXXX") || exit 2
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-py.XXXXXX") || exit 6
 trap 'rm -rf "$tmp"' EXIT
 "$tool" --quiet --isolated --output-format gitlab --output "$tmp/out.json" --cache-dir "$tmp/cache" \
   --max-complexity-allowed "$limit" "$@" >/dev/null
 st=$?
-[ $st -le 1 ] || exit 2
+[ $st -le 1 ] || { echo "complexipy failed (exit $st)" >&2; exit 6; }
 
 hits=$(python3 -I -c '
 import json, re, sys
@@ -85,10 +85,14 @@ for r in json.load(open(sys.argv[3])):
     m = re.match(r"Function \x27(.*)\x27 has cognitive complexity (\d+)", r["description"])
     print("\t".join(["%s:%d" % (r["location"]["path"], r["location"]["lines"]["begin"]), "python",
                      m.group(1).replace("::", "."), "cognitive", m.group(2), limit, src]))
-' "$limit" "$src" "$tmp/out.json") || exit 2
+' "$limit" "$src" "$tmp/out.json") || { echo "complexipy output could not be read" >&2; exit 6; }
 
-# complexipy reports only offenders, so a file it could not parse reads as clean: check syntax read-only.
-unparsed=$(python3 -I -c '
+# complexipy reports only offenders, so a file it could not parse reads as clean: check syntax read-only,
+# with the interpreter beside the vetted complexipy (the project's own Python version) when there is one.
+py=python3
+tool_dir=$(dirname "$(command -v "$tool")")
+[ -x "$tool_dir/python3" ] && py="$tool_dir/python3"
+unparsed=$("$py" -I -c '
 import ast, sys
 for f in sys.argv[1:]:
     try:

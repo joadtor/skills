@@ -145,3 +145,22 @@ max-complexity-allowed = 20")
   assert_contains "$OUT" "app/c22.py:1"
   assert_eq "$ERR" "complexity: app/broken.py could not be parsed — unchecked"
 }
+
+t_python_syntax_cross_check_uses_the_interpreter_next_to_complexipy() {
+  local repo calls; repo=$(fixture); calls="$TEST_TMP/py-calls"
+  copy_fixture "$repo" python/c22.py app/c22.py
+  add_file "$repo" pyproject.toml "[tool.complexipy]"
+  add_file "$repo" .gitignore ".venv"
+  add_file "$repo" .venv/bin/complexipy '#!/bin/sh
+[ "$1" = --version ] && exit 0
+while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done
+echo "[]" > "$out"'
+  add_file "$repo" .venv/bin/python3 "#!/bin/sh
+echo venv-python >> '$calls'
+exec '$(command -v python3)' \"\$@\""
+  chmod +x "$repo/.venv/bin/complexipy" "$repo/.venv/bin/python3"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/python.sh" app/c22.py
+  assert_exit 0
+  assert_contains "$(cat "$calls")" "venv-python"
+}

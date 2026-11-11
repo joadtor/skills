@@ -114,6 +114,11 @@ echo '$3'"
   chmod +x "$1/node_modules/.bin/$2"
 }
 
+# js_stub_eslint_api <repo> <rules-json> — a fake node_modules/eslint whose ESLint class resolves every file to those rules
+js_stub_eslint_api() {
+  add_file "$1" node_modules/eslint/index.js "exports.ESLint = class { async calculateConfigForFile() { return { rules: $2 }; } };"
+}
+
 t_js_detect_unconfigured_exits_4() {
   skip_unless_cmd node
   local repo; repo=$(fixture)
@@ -142,11 +147,12 @@ t_js_detect_eslint_configured_and_runnable_exits_0() {
   skip_unless_cmd node
   local repo; repo=$(fixture)
   js_add_cog "$repo"
-  js_stub_tool "$repo" eslint '{"rules":{"sonarjs/cognitive-complexity":["error",20]}}'
+  js_stub_tool "$repo" eslint ''
+  js_stub_eslint_api "$repo" '{"sonarjs/cognitive-complexity":["error",20]}'
   commit_all "$repo"
   run_in "$repo" "$SCRIPTS/lang/js.sh" --detect src/cog22.js
   assert_exit 0
-  assert_eq "$(cat "$repo/../calls")" "--print-config src/cog22.js"
+  [ ! -e "$repo/../calls" ] || fail "eslint was run: $(cat "$repo/../calls")"
 }
 
 t_js_detect_biome_configured_but_missing_exits_5() {
@@ -262,4 +268,46 @@ t_js_biome_unparsable_file_is_unchecked_not_clean() {
   assert_exit 2
   assert_eq "$OUT" ""
   assert_eq "$ERR" "complexity: src/broken.js could not be parsed — unchecked"
+}
+
+t_js_an_eslint_crash_after_an_uncovered_notice_is_a_tool_failure_not_unchecked() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  add_file "$repo" eslint.config.mjs - <<'EOC'
+import sonarjs from "eslint-plugin-sonarjs";
+const boom = { rules: { boom: { create() { throw new Error("boom rule"); } } } };
+export default [{ files: ["**/*.js"], plugins: { sonarjs, boom }, rules: { "sonarjs/cognitive-complexity": ["error", 20], "boom/boom": "error" } }];
+EOC
+  copy_fixture "$repo" js/cog16.ts src/a.ts
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/a.ts src/cog18.js
+  assert_exit 6
+  assert_contains "$ERR" "src/a.ts not covered by the project's ESLint config — unchecked"
+  assert_contains "$ERR" "boom rule"
+  run_in "$repo" "$SCRIPTS/check.sh" src/a.ts src/cog18.js
+  assert_contains "$ERR" "skipped JS/TS (tool failed: "
+  assert_not_contains "$ERR" "complexity: clean — 1 file(s) unchecked"
+}
+
+t_js_resolves_every_files_eslint_config_in_one_process_not_one_eslint_per_file() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo t calls; repo=$(fixture); calls="$TEST_TMP/eslint-calls"
+  mkdir -p "$repo/node_modules/.bin"
+  for t in "$TEST_CACHE/js-eslint-sonarjs/node_modules"/*; do ln -s "$t" "$repo/node_modules/$(basename "$t")"; done
+  printf '#!/bin/sh\necho "$@" >> "%s"\nexec "%s/js-eslint-sonarjs/node_modules/.bin/eslint" "$@"\n' "$calls" "$TEST_CACHE" > "$repo/node_modules/.bin/eslint"
+  chmod +x "$repo/node_modules/.bin/eslint"
+  printf 'node_modules\n' > "$repo/.gitignore"
+  js_cover_js_only_config "$repo" 20
+  copy_fixture "$repo" js/cog16.ts src/a.ts
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/a.ts src/cog22.js src/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}eslint config"
+  assert_eq "$ERR" "complexity: src/a.ts not covered by the project's ESLint config — unchecked"
+  assert_not_contains "$(cat "$calls")" "--print-config"
+  assert_eq "$(wc -l < "$calls" | tr -d ' ')" "1"
 }

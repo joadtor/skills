@@ -191,3 +191,14 @@ t_check_no_changed_files_is_clean() {
   assert_eq "$OUT" ""
   assert_eq "$ERR" "complexity: clean"
 }
+
+t_check_exit_6_is_a_tool_failure_even_after_unchecked_notices() {
+  local r; r="$(fixture)"; LD="$(mktmp)"
+  add_file "$r" app/a.rb "x"; add_file "$r" app/b.rb "x"; commit_all "$r"
+  stub "$LD" ruby 'echo "complexity: app/b.rb could not be parsed — unchecked" >&2; echo "boom" >&2; exit 6'
+  check "$r"
+  assert_exit 0
+  assert_contains "$ERR" "complexity: app/b.rb could not be parsed — unchecked"
+  assert_contains "$ERR" "skipped Ruby (tool failed: boom) — unchecked: app/a.rb app/b.rb"
+  assert_not_contains "$ERR" "complexity: clean — 1 file(s) unchecked"
+}

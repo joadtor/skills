@@ -17,12 +17,12 @@ root=$PWD limit=$(default_limit ruby)
 args=()
 for f in "$@"; do f=${f#./}; args+=("$root/$f"); done
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-rb.XXXXXX") || exit 2
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-rb.XXXXXX") || exit 6
 trap 'rm -rf "$tmp"' EXIT
 rows=$(cd "$tmp" && env -u RUBYOPT -u RUBYLIB "$ruby" --disable-gems "$scorer" "$root" "${args[@]}" 2>"$tmp/err"); st=$?
 case $st in
   0|2) cat "$tmp/err" >&2 ;;
-  *)   head -n 1 "$tmp/err" >&2; exit 2 ;;
+  *)   cat "$tmp/err" >&2; exit 6 ;;
 esac
 
 over=0

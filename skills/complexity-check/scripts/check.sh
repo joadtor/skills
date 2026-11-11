@@ -13,9 +13,12 @@
 #           file:line  lang  function  metric  score  limit  source   (metric is always "cognitive";
 #           source: where the limit came from, e.g. "skill default", "pyproject.toml")
 #   stderr  notices to pass through (e.g. "<file> could not be parsed — unchecked")
-#           (exit 2 with such notices = those files unchecked, not a tool failure; the JS script also
+#           (exit 2 with such notices = those files unchecked, nothing else wrong; the JS script also
 #           names files its ESLint config does not cover: "not covered by the project's ESLint config — unchecked")
+#           A script forwards its whole stderr, so notices and a failure message both show.
 #   exit    0 nothing over · 1 offenders printed · 3 tool missing (first stderr line = reason)
+#           · 6 the tool crashed or failed (first stderr line that is not an "— unchecked" notice = reason);
+#             never 2: 2 is only "some files unchecked, nothing else wrong"
 #           · 4 the project has no configured cognitive tool of its own -> check.sh sends that
 #             language's files to lang/lizard.sh, which follows this same contract (without 4)
 #           · anything else = the tool failed
@@ -45,6 +48,7 @@ run_script() {
   errf=$(mktemp "${TMPDIR:-/tmp}/cc-err.XXXXXX")
   out=$("$script" "$@" 2>"$errf"); status=$?
   reason=$(head -n 1 "$errf")
+  failure=$(grep -v ' — unchecked$' "$errf" | head -n 1)
   named=$(grep -c ' — unchecked$' "$errf")
   [ $status -ne 3 ] && [ -s "$errf" ] && cat "$errf" >&2
   rm -f "$errf"
@@ -63,6 +67,7 @@ finish() {
     2)   if [ "$named" -gt 0 ]; then unchecked=$((unchecked + named))
          else skip "$lang" "tool failed, exit 2" "$*"
          fi ;;
+    6)   skip "$lang" "tool failed: ${failure:-no message}" "$*" ;;
     *)   skip "$lang" "tool failed, exit $status" "$*" ;;
   esac
 }

@@ -141,7 +141,7 @@ t_rust_offline_unresolvable_dep_skips() {
   local r home; r="$(rs_repo over)"; home="$(mktmp)"
   printf '\n[dependencies]\nsome-unlikely-crate-xyz = "1"\n' >> "$r/Cargo.toml"; commit_all "$r"
   CARGO_HOME="$home" rs_run "$r" src/lib.rs
-  assert_exit 2
+  assert_exit 6
   assert_contains "$ERR" "offline"
   CARGO_HOME="$home" CARGO_TARGET_DIR="$TEST_CACHE/rust-target" run_in "$r" "$SCRIPTS/check.sh"
   assert_exit 0

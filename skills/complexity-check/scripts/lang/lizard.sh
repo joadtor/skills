@@ -24,7 +24,7 @@ for f in "$@"; do f=${f#./}; args+=("$root/$f"); done
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 (cd "$tmp" && env -u PYTHONPATH PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1 "$lizard" -Ecognitive --csv "${args[@]}") >"$tmp/rows" 2>"$tmp/err"
 st=$?
-[ $st -eq 0 ] || { head -n 3 "$tmp/err" >&2; exit 2; }
+[ $st -eq 0 ] || { cat "$tmp/err" >&2; echo "lizard failed (exit $st)" >&2; exit 6; }
 over=0 seen=$'\n'
 while IFS= read -r row; do
   cog=${row##*,}; rest=${row%,*}

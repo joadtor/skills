@@ -56,6 +56,7 @@ for f in files:
         want[os.path.normpath(os.path.join(base, f))] = f
 data = json.load(sys.stdin)
 rows = []
+broken_dirs = set()
 if kind == "golangci":
     for i in (data or {}).get("Issues") or []:
         m = re.match(r"cognitive complexity (\d+) of func `(.*)` is high", i["Text"])
@@ -63,6 +64,7 @@ if kind == "golangci":
             rows.append((i["Pos"]["Filename"], i["Pos"]["Line"], m.group(2), m.group(1)))
         elif i.get("FromLinter") == "typecheck":
             rows.append((i["Pos"]["Filename"], 0, None, None))
+            broken_dirs.add(os.path.realpath(os.path.dirname(i["Pos"]["Filename"])))
 else:
     for i in data or []:
         rows.append((i["Pos"]["Filename"], i["Pos"]["Line"], i["FuncName"], i["Complexity"]))
@@ -75,12 +77,15 @@ for name, line, func, score in rows:
             else:
                 print("\t".join([rel + ":" + str(line), "go", func, "cognitive", str(score), limit, src]))
             break
+for path, rel in want.items():
+    if os.path.realpath(os.path.dirname(path)) in broken_dirs:
+        print("unchecked\t" + rel)
 ' "$@"
 }
 
 emit() { # reads JSON on stdin; kind root limit src file...
   local out hits bad f
-  out=$(report "$@") || return 2
+  out=$(report "$@") || return 6
   hits=$(printf '%s\n' "$out" | grep -v '^unchecked'"$TAB")
   bad=$(printf '%s\n' "$out" | sed -n "s/^unchecked$TAB//p" | sort -u)
   while IFS= read -r f; do
@@ -98,7 +103,7 @@ if [ -n "$enabled" ]; then
   if [ -n "$gl" ]; then
     [ $detect = 1 ] && exit 0
     command -v python3 >/dev/null 2>&1 || { echo "python3 not found" >&2; exit 3; }
-    root=$PWD tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 2
+    root=$PWD tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 6
     trap 'rm -rf "$tmp"' EXIT
     pkgs=() # one ./dir per line, deduplicated without word splitting (dirs may hold spaces or globs)
     while IFS= read -r d; do pkgs+=("$d"); done < <(for f in "$@"; do printf './%s\n' "$(dirname "$f")"; done | sort -u)
@@ -117,8 +122,9 @@ if [ -n "$enabled" ]; then
       args+=(--output.json.path stdout --output.text.path /dev/null --show-stats=false --path-mode abs)
     fi
     $gl run "${args[@]}" -- "${pkgs[@]}" >"$tmp/out" 2>"$tmp/err"; status=$?
-    if [ $status -gt 1 ]; then head -n 3 "$tmp/err" >&2; exit 2; fi
+    if [ $status -gt 1 ]; then cat "$tmp/err" >&2; exit 6; fi
     emit golangci "$root" "$limit" "$src" "$@" <"$tmp/out"; status=$?
+    [ $status -eq 6 ] && cat "$tmp/err" >&2
     exit $status
   fi
 fi
@@ -133,28 +139,35 @@ fi
 [ -z "$gc" ] && exit 4
 command -v python3 >/dev/null 2>&1 || { echo "python3 not found" >&2; exit 3; }
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 2
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-go.XXXXXX") || exit 6
 trap 'rm -rf "$tmp"' EXIT
-out=$($gc -json -over "$limit" "$@" 2>"$tmp/err"); status=$?
-[ $status -gt 1 ] && exit 2
-# gocognit measures nothing when any file fails to parse: name those files, then measure the rest.
-bad=$(sed -n 's/^gocognit: \(.*\):[0-9][0-9]*:[0-9][0-9]*: .*/\1/p' "$tmp/err" | sort -u)
-if [ -n "$bad" ]; then
-  rest=()
-  for f in "$@"; do
-    case "$TAB$(printf '%s' "$bad" | tr '\n' "$TAB")$TAB" in
-      *"$TAB$f$TAB"*) echo "complexity: $f could not be parsed — unchecked" >&2 ;;
-      *) rest+=("$f") ;;
+# gocognit stops at the first file that fails to parse and names only that one: rerun on the rest until a run parses.
+rest=("$@") badlist=$TAB out="" status=0
+while [ ${#rest[@]} -gt 0 ]; do
+  out=$($gc -json -over "$limit" "${rest[@]}" 2>"$tmp/err"); status=$?
+  named=$(sed -n 's/^gocognit: \(.*\):[0-9][0-9]*:[0-9][0-9]*: .*/\1/p' "$tmp/err" | sort -u)
+  [ -n "$named" ] || break
+  namedtab="$TAB$(printf '%s' "$named" | tr '\n' "$TAB")$TAB"
+  next=()
+  for f in "${rest[@]}"; do
+    case "$namedtab" in
+      *"$TAB$f$TAB"*) badlist="$badlist$f$TAB" ;;
+      *) next+=("$f") ;;
     esac
   done
-  out=""
-  if [ ${#rest[@]} -gt 0 ]; then
-    out=$($gc -json -over "$limit" "${rest[@]}" 2>/dev/null); status=$?
-    [ $status -gt 1 ] && exit 2
-  fi
-  [ -z "$out" ] && exit 2
-  printf '%s\n' "$out" | emit gocognit "$PWD" "$limit" "$src" "${rest[@]}"
-  [ $? -eq 1 ] && exit 1
-  exit 2
+  [ ${#next[@]} -eq ${#rest[@]} ] && break
+  rest=(${next[@]+"${next[@]}"})
+  out="" status=0
+done
+[ $status -gt 1 ] && { cat "$tmp/err" >&2; exit 6; }
+for f in "$@"; do
+  case "$badlist" in *"$TAB$f$TAB"*) echo "complexity: $f could not be parsed — unchecked" >&2 ;; esac
+done
+rc=0
+if [ ${#rest[@]} -gt 0 ]; then
+  printf '%s\n' "$out" | emit gocognit "$PWD" "$limit" "$src" "${rest[@]}"; rc=$?
 fi
-printf '%s\n' "$out" | emit gocognit "$PWD" "$limit" "$src" "$@"
+[ $rc -eq 1 ] && exit 1
+[ $rc -eq 6 ] && { cat "$tmp/err" >&2; exit 6; }
+{ [ $rc -eq 2 ] || [ "$badlist" != "$TAB" ]; } && exit 2
+exit 0

@@ -205,9 +205,21 @@ t_ruby_a_scorer_crash_is_a_failure_not_clean() {
   printf '#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "boom: first" >&2\necho "second line" >&2\nexit 1\n' > "$bin/ruby"
   chmod +x "$bin/ruby"
   run_in "$r" env PATH="$bin:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/over.rb
-  assert_exit 2
+  assert_exit 6
   assert_eq "$OUT" ""
-  assert_eq "$ERR" "boom: first"
+  assert_eq "$ERR" "boom: first
+second line"
+}
+
+t_ruby_a_scorer_crash_after_an_unchecked_notice_is_a_failure_not_unchecked() {
+  local r bin; r="$(ruby_repo cognitive/ruby/over.rb:src/over.rb)" || exit $?; bin="$TEST_TMP/fake"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\n[ "$1" = --version ] && exit 0\necho "complexity: src/x.rb could not be parsed — unchecked" >&2\necho "boom" >&2\nexit 1\n' > "$bin/ruby"
+  chmod +x "$bin/ruby"
+  run_in "$r" env PATH="$bin:/usr/bin:/bin" XDG_CACHE_HOME="$TEST_TMP/cache" "$RUBY_SH" src/over.rb
+  assert_exit 6
+  assert_contains "$ERR" "could not be parsed — unchecked"
+  assert_contains "$ERR" "boom"
 }
 
 t_ruby_a_file_the_scorer_chokes_on_is_unchecked_and_the_rest_is_still_scored() {
