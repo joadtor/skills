@@ -13,36 +13,42 @@ detect=0
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/cc-js.XXXXXX") || exit 6
 trap 'rm -rf "$tmp"' EXIT
 
-# One "<limit>|default|-<TAB><file>" line per file: the sonarjs/cognitive-complexity limit, or "-" when the rule is off or the
-# config does not cover the file. All files are resolved in one node process through the project's own ESLint API.
+# Writes one "<limit>|default|-<TAB><file>" line per file to <outfile>: the sonarjs/cognitive-complexity limit, or "-" when the
+# rule is off or the config does not cover the file. All files are resolved in one node process through the ESLint class the CLI uses.
 eslint_limits() {
   node -e '
-    const path = require("path");
+    const fs = require("fs"), path = require("path");
     (async () => {
-      const { ESLint } = require(path.resolve("node_modules/eslint"));
-      const eslint = new ESLint({ cwd: process.cwd() });
-      for (const f of process.argv.slice(1)) {
+      const api = require(path.resolve("node_modules/eslint"));
+      const cwd = process.cwd();
+      let C = api.loadESLint ? await api.loadESLint({ cwd }) : api.ESLint;
+      if (!api.loadESLint && ["js", "mjs", "cjs"].some((x) => fs.existsSync("eslint.config." + x))) {
+        try { C = require(path.resolve("node_modules/eslint/use-at-your-own-risk")).FlatESLint || C; } catch (e) {}
+      }
+      const eslint = new C({ cwd });
+      let out = "";
+      for (const f of process.argv.slice(2)) {
         let rule;
-        try { rule = (((await eslint.calculateConfigForFile(f)) || {}).rules || {})["sonarjs/cognitive-complexity"]; } catch (e) {}
+        try { rule = (((await eslint.calculateConfigForFile(f)) || {}).rules || {})["sonarjs/cognitive-complexity"]; }
+        catch (e) { if (!/Could not find config file|No ESLint configuration found/.test(e && e.message)) throw e; }
         const [sev, opt] = Array.isArray(rule) ? rule : [rule];
         const off = sev === undefined || sev === 0 || sev === "off";
-        console.log((off ? "-" : Number.isInteger(opt) && opt > 0 ? opt : "default") + "\t" + f);
+        out += (off ? "-" : Number.isInteger(opt) && opt > 0 ? opt : "default") + "\t" + f + "\n";
       }
-    })().catch((e) => { console.error("eslint API failed: " + (e && e.message)); process.exit(1); });
+      fs.writeFileSync(process.argv[1], out);
+    })().catch((e) => { console.error("eslint API failed: " + String((e && e.message) || e).split("\n")[0]); process.exit(1); });
   ' "$@"
 }
 
 if [ -n "$(local_tool node_modules/.bin/eslint)" ]; then
   : > "$tmp/covered"
   uncovered=()
-  limits=$(eslint_limits "$@" 2>"$tmp/err") || { cat "$tmp/err" >&2; exit 6; }
+  eslint_limits "$tmp/limits" "$@" >/dev/null 2>"$tmp/err" || { cat "$tmp/err" >&2; exit 6; }
   while IFS=$'\t' read -r c f; do
     if [ "$c" = - ]; then uncovered+=("$f"); continue; fi
     [ $detect = 1 ] && exit 0
     printf '%s\t%s\n' "$c" "$f" >> "$tmp/covered"
-  done <<EOF3
-$limits
-EOF3
+  done < "$tmp/limits"
   if [ -s "$tmp/covered" ]; then
     : > "$tmp/offenders"
     unchecked=0
@@ -57,7 +63,8 @@ EOF3
       while IFS=$'\t' read -r c f; do
         [ "$c" = "$configured" ] && group+=("$f")
       done < "$tmp/covered"
-      node_modules/.bin/eslint --format json "${group[@]}" > "$tmp/out.json" 2> "$tmp/err"
+      rm -f "$tmp/out.json"
+      node_modules/.bin/eslint --format json -o "$tmp/out.json" "${group[@]}" >/dev/null 2> "$tmp/err"
       [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 6; }
       LIMIT=$limit SRC=$src node -e '
         const fs = require("fs"), path = require("path");
@@ -80,7 +87,9 @@ EOF3
         }
         process.exitCode = bad ? 3 : 0;
       ' "$tmp/out.json" >> "$tmp/offenders"
-      [ $? -eq 3 ] && unchecked=1
+      rc=$?
+      [ $rc -eq 3 ] && unchecked=1
+      [ $rc -ne 0 ] && [ $rc -ne 3 ] && { echo "complexity: could not read ESLint's report" >&2; exit 6; }
     done <<EOF2
 $(cut -f1 "$tmp/covered" | sort -u)
 EOF2
@@ -139,6 +148,21 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
       process.exitCode = bad ? 3 : 0;
     ' "$tmp/out.json" > "$tmp/offenders"
     unchecked=$?
+    [ $unchecked -ne 0 ] && [ $unchecked -ne 3 ] && { echo "complexity: could not read Biome's report" >&2; exit 6; }
+    [ $unchecked -eq 3 ] || unchecked=0
+    processed=$(node -e '
+      const raw = require("fs").readFileSync(process.argv[1], "utf8");
+      const s = JSON.parse(raw.slice(raw.indexOf("{"))).summary;
+      console.log(s.changed + s.unchanged);
+    ' "$tmp/out.json")
+    if [ "$processed" -lt $# ]; then
+      for f in "$@"; do
+        node_modules/.bin/biome lint --reporter=json "$f" > "$tmp/one.json" 2>/dev/null
+        [ "$(node -e 'const r = require("fs").readFileSync(process.argv[1], "utf8"); const s = JSON.parse(r.slice(r.indexOf("{"))).summary; console.log(s.changed + s.unchanged)' "$tmp/one.json")" = 0 ] || continue
+        echo "complexity: $f not covered by the project's Biome config — unchecked" >&2
+        unchecked=3
+      done
+    fi
     cat "$tmp/offenders"
     [ -s "$tmp/offenders" ] && exit 1
     [ $unchecked -eq 3 ] && exit 2

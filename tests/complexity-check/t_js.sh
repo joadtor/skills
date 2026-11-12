@@ -16,6 +16,7 @@ js_template() {
 }
 
 js_eslint_template() { js_template js-eslint-sonarjs eslint@9.39.5 eslint-plugin-sonarjs@4.2.2; }
+js_eslint8_template() { js_template js-eslint8-sonarjs eslint@8.57.1 eslint-plugin-sonarjs@1.0.4; }
 js_biome_template()  { js_template js-biome @biomejs/biome@2.6.4; }
 
 # js_repo <template> — fixture repo whose node_modules is the template's, git-ignored
@@ -310,4 +311,83 @@ t_js_resolves_every_files_eslint_config_in_one_process_not_one_eslint_per_file()
   assert_eq "$ERR" "complexity: src/a.ts not covered by the project's ESLint config — unchecked"
   assert_not_contains "$(cat "$calls")" "--print-config"
   assert_eq "$(wc -l < "$calls" | tr -d ' ')" "1"
+}
+
+t_js_eslint8_flat_config_is_honored() {
+  skip_unless_cmd node
+  js_eslint8_template
+  local repo; repo=$(js_repo js-eslint8-sonarjs)
+  add_file "$repo" eslint.config.js - <<'EOC'
+const sonarjs = require("eslint-plugin-sonarjs");
+module.exports = [{ files: ["**/*.js"], plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": ["error", 20] } }];
+EOC
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}eslint config"
+}
+
+t_js_an_eslint_config_that_throws_is_a_tool_failure_not_unconfigured() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  add_file "$repo" eslint.config.mjs 'throw new Error("boom");'
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 6
+  assert_contains "$ERR" "boom"
+}
+
+t_js_an_eslint_config_that_logs_does_not_break_the_report() {
+  skip_unless_cmd node
+  js_eslint_template
+  local repo; repo=$(js_repo js-eslint-sonarjs)
+  add_file "$repo" eslint.config.mjs - <<'EOC'
+import sonarjs from "eslint-plugin-sonarjs";
+console.log("config loaded");
+export default [{ files: ["**/*.js"], plugins: { sonarjs }, rules: { "sonarjs/cognitive-complexity": ["error", 20] } }];
+EOC
+  js_add_cog "$repo"
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js src/cog18.js
+  assert_exit 1
+  assert_eq "$OUT" "src/cog22.js:1${TAB}js${TAB}risky${TAB}cognitive${TAB}22${TAB}20${TAB}eslint config"
+}
+
+t_js_an_unreadable_eslint_report_is_a_tool_failure_not_clean() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  js_add_cog "$repo"
+  js_stub_tool "$repo" eslint 'not json'
+  js_stub_eslint_api "$repo" '{"sonarjs/cognitive-complexity":["error",20]}'
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js
+  assert_exit 6
+}
+
+t_js_an_unreadable_biome_report_is_a_tool_failure_not_clean() {
+  skip_unless_cmd node
+  local repo; repo=$(fixture)
+  add_file "$repo" biome.json '{"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":"error"}}}}'
+  js_add_cog "$repo"
+  js_stub_tool "$repo" biome 'not json'
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js
+  assert_exit 6
+}
+
+t_js_files_outside_the_biome_config_are_unchecked_not_clean() {
+  skip_unless_cmd node
+  js_biome_template
+  local repo; repo=$(js_repo js-biome)
+  add_file "$repo" biome.json '{"files":{"includes":["lib/**"]},"linter":{"rules":{"complexity":{"noExcessiveCognitiveComplexity":{"level":"error","options":{"maxAllowedComplexity":20}}}}}}'
+  copy_fixture "$repo" js/cog22.js src/cog22.js
+  copy_fixture "$repo" js/cog18.js lib/cog18.js
+  commit_all "$repo"
+  run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js lib/cog18.js
+  assert_exit 2
+  assert_eq "$OUT" ""
+  assert_eq "$ERR" "complexity: src/cog22.js not covered by the project's Biome config — unchecked"
 }
