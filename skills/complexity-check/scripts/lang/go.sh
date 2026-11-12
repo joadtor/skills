@@ -84,8 +84,10 @@ for path, rel in want.items():
 }
 
 emit() { # reads JSON on stdin; kind root limit src file...
-  local out hits bad f
-  out=$(report "$@") || return 6
+  local in out hits bad f
+  in=$(cat)
+  [ -n "$in" ] || return 6
+  out=$(printf '%s\n' "$in" | report "$@") || return 6
   hits=$(printf '%s\n' "$out" | grep -v '^unchecked'"$TAB")
   bad=$(printf '%s\n' "$out" | sed -n "s/^unchecked$TAB//p" | sort -u)
   while IFS= read -r f; do
@@ -121,10 +123,40 @@ if [ -n "$enabled" ]; then
     else
       args+=(--output.json.path stdout --output.text.path /dev/null --show-stats=false --path-mode abs)
     fi
-    $gl run "${args[@]}" -- "${pkgs[@]}" >"$tmp/out" 2>"$tmp/err"; status=$?
-    if [ $status -gt 1 ]; then cat "$tmp/err" >&2; exit 6; fi
+    # A typecheck issue stops golangci-lint measuring any package: rerun without the broken ones.
+    broken=()
+    while :; do
+      [ ${#pkgs[@]} -gt 0 ] || { : >"$tmp/out"; break; }
+      $gl run "${args[@]}" -- "${pkgs[@]}" >"$tmp/out" 2>"$tmp/err"; status=$?
+      if [ $status -gt 1 ]; then cat "$tmp/err" >&2; exit 6; fi
+      keep=() dropped=0
+      while IFS="$TAB" read -r verdict d; do
+        case $verdict in keep) keep+=("$d") ;; drop) broken+=("$d"); dropped=1 ;; esac
+      done < <(python3 -I -c '
+import json, os, sys
+root, pkgs = sys.argv[1], sys.argv[2:]
+bad = set()
+for i in (json.load(sys.stdin) or {}).get("Issues") or []:
+    if i.get("FromLinter") == "typecheck":
+        bad.add(os.path.realpath(os.path.dirname(i["Pos"]["Filename"])))
+for p in pkgs:
+    print(("drop" if os.path.realpath(os.path.join(root, p)) in bad else "keep") + "\t" + p)
+if bad and not any(os.path.realpath(os.path.join(root, p)) in bad for p in pkgs):
+    sys.exit(1)
+' "$root" "${pkgs[@]}" <"$tmp/out") || { echo "golangci-lint reported a syntax error outside the requested packages" >&2; exit 6; }
+      [ $dropped = 0 ] && break
+      pkgs=(${keep[@]+"${keep[@]}"})
+    done
+    unchecked=0
+    for f in "$@"; do
+      for b in ${broken[@]+"${broken[@]}"}; do
+        [ "./$(dirname "$f")" = "$b" ] && { echo "complexity: $f could not be parsed — unchecked" >&2; unchecked=1; }
+      done
+    done
+    [ -s "$tmp/out" ] || printf '{}' >"$tmp/out"
     emit golangci "$root" "$limit" "$src" "$@" <"$tmp/out"; status=$?
     [ $status -eq 6 ] && cat "$tmp/err" >&2
+    [ $status -eq 0 ] && [ $unchecked = 1 ] && status=2
     exit $status
   fi
 fi

@@ -333,3 +333,65 @@ func T() int { return undefinedVar }'
   assert_contains "$OUT" "app/high.go:3${TAB}go${TAB}Total${TAB}cognitive${TAB}22"
   assert_eq "$ERR" ""
 }
+
+go_six_ifs() { printf 'package %s\nfunc F(x int) int {\n\tt := 0\n\tif x > 1 { t++ }\n\tif x > 2 { t++ }\n\tif x > 3 { t++ }\n\tif x > 4 { t++ }\n\tif x > 5 { t++ }\n\tif x > 6 { t++ }\n\treturn t\n}\n' "$1"; }
+
+go_min_one_repo() {
+  local repo; repo=$(fixture)
+  copy_fixture "$repo" go/cog/go.mod go.mod
+  add_file "$repo" .golangci.yml - <<'YML'
+version: "2"
+linters:
+  enable:
+    - gocognit
+  settings:
+    gocognit:
+      min-complexity: 1
+YML
+  add_file "$repo" a/a.go "$(go_six_ifs a)"
+  add_file "$repo" c/c.go "$(go_six_ifs c)"
+  add_file "$repo" root.go "$(go_six_ifs root)"
+  echo "$repo"
+}
+
+t_go_golangci_a_broken_package_does_not_hide_offenders_in_the_other_packages() {
+  go_tools
+  local repo; repo=$(go_min_one_repo)
+  add_file "$repo" a/b/b.go 'package b
+func B( {'
+  commit_all "$repo"
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" a/a.go a/b/b.go c/c.go root.go
+  assert_exit 1
+  assert_contains "$OUT" "a/a.go:2${TAB}go${TAB}F${TAB}cognitive${TAB}6"
+  assert_contains "$OUT" "c/c.go:2${TAB}go${TAB}F${TAB}cognitive${TAB}6"
+  assert_contains "$OUT" "root.go:2${TAB}go${TAB}F${TAB}cognitive${TAB}6"
+  assert_eq "$ERR" "complexity: a/b/b.go could not be parsed — unchecked"
+}
+
+t_go_golangci_a_broken_package_imported_but_not_requested_leaves_the_requested_ones_measured() {
+  go_tools
+  local repo; repo=$(go_min_one_repo)
+  add_file "$repo" a/b/b.go 'package b
+func B( {'
+  add_file "$repo" c/c.go "package c
+import _ \"example.com/app/a/b\"
+$(go_six_ifs c | sed 1d)"
+  commit_all "$repo"
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" a/a.go c/c.go
+  assert_exit 1
+  assert_contains "$OUT" "a/a.go:2${TAB}go${TAB}F${TAB}cognitive${TAB}6"
+  assert_contains "$OUT" "c/c.go:3${TAB}go${TAB}F${TAB}cognitive${TAB}6"
+  assert_eq "$ERR" ""
+}
+
+t_go_gocognit_failure_without_a_parse_error_reports_the_tools_message() {
+  go_tools
+  local repo; repo=$(go_repo)
+  commit_all "$repo"
+  chmod 000 "$repo/app/mid.go"
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with gocognit)" "$SCRIPTS/lang/go.sh" app/mid.go app/high.go
+  chmod 644 "$repo/app/mid.go"
+  assert_exit 6
+  assert_contains "$ERR" "permission denied"
+  assert_not_contains "$ERR" "Traceback"
+}
