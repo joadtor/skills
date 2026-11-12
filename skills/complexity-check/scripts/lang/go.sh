@@ -130,9 +130,7 @@ if [ -n "$enabled" ]; then
       $gl run "${args[@]}" -- "${pkgs[@]}" >"$tmp/out" 2>"$tmp/err"; status=$?
       if [ $status -gt 1 ]; then cat "$tmp/err" >&2; exit 6; fi
       keep=() dropped=0
-      while IFS="$TAB" read -r verdict d; do
-        case $verdict in keep) keep+=("$d") ;; drop) broken+=("$d"); dropped=1 ;; esac
-      done < <(python3 -I -c '
+      verdicts=$(python3 -I -c '
 import json, os, sys
 root, pkgs = sys.argv[1], sys.argv[2:]
 bad = set()
@@ -144,6 +142,11 @@ for p in pkgs:
 if bad and not any(os.path.realpath(os.path.join(root, p)) in bad for p in pkgs):
     sys.exit(1)
 ' "$root" "${pkgs[@]}" <"$tmp/out") || { echo "golangci-lint reported a syntax error outside the requested packages" >&2; exit 6; }
+      while IFS="$TAB" read -r verdict d; do
+        case $verdict in keep) keep+=("$d") ;; drop) broken+=("$d"); dropped=1 ;; esac
+      done <<EOF_V
+$verdicts
+EOF_V
       [ $dropped = 0 ] && break
       pkgs=(${keep[@]+"${keep[@]}"})
     done

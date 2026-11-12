@@ -365,6 +365,8 @@ t_js_an_unreadable_eslint_report_is_a_tool_failure_not_clean() {
   commit_all "$repo"
   run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js
   assert_exit 6
+  assert_eq "$(printf '%s\n' "$ERR" | head -n 1)" "complexity: could not read ESLint's report" "the reason is ours, not a stack trace"
+  assert_not_contains "$ERR" "    at "
 }
 
 t_js_an_unreadable_biome_report_is_a_tool_failure_not_clean() {
@@ -376,6 +378,8 @@ t_js_an_unreadable_biome_report_is_a_tool_failure_not_clean() {
   commit_all "$repo"
   run_in "$repo" "$SCRIPTS/lang/js.sh" src/cog22.js
   assert_exit 6
+  assert_eq "$(printf '%s\n' "$ERR" | head -n 1)" "complexity: could not read Biome's report" "the reason is ours, not a stack trace"
+  assert_not_contains "$ERR" "    at "
 }
 
 t_js_files_outside_the_biome_config_are_unchecked_not_clean() {

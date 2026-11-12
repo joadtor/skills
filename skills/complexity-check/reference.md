@@ -34,7 +34,7 @@ A project tool that is configured but not installed (no `node_modules`, no venv)
 
 ## Unparsable files
 
-A Ruby file the scorer can't parse is reported **unchecked**, never clean. lizard reports nothing for a file it can't parse; for Python and Go the check cross-checks such a file with the language's own read-only syntax check and reports it unchecked too. A project's own tool (ESLint, Biome, complexipy, golangci-lint, gocognit) that can't parse a file is reported unchecked as well, and so is a JS/TS file the project's ESLint config doesn't cover. For lizard on JS/TS and Rust no cheap checker exists, so a broken file there reads as having no functions — fix syntax errors first.
+A Ruby file the scorer can't parse is reported **unchecked**, never clean. lizard reports nothing for a file it can't parse; for Python and Go the check cross-checks such a file with the language's own read-only syntax check and reports it unchecked too. A project's own tool (ESLint, Biome, complexipy, golangci-lint, gocognit) that can't parse a file is reported unchecked as well, and so is a JS/TS file the project's ESLint config doesn't cover, or that Biome's `files.includes` leaves out (finding which ones re-runs Biome per file, so a large change set with an excluded file is slower). For lizard on JS/TS and Rust no cheap checker exists, so a broken file there reads as having no functions — fix syntax errors first.
 
 ## Refactor playbook
 

@@ -395,3 +395,14 @@ t_go_gocognit_failure_without_a_parse_error_reports_the_tools_message() {
   assert_contains "$ERR" "permission denied"
   assert_not_contains "$ERR" "Traceback"
 }
+
+t_go_golangci_a_syntax_error_outside_the_requested_packages_is_a_tool_failure() {
+  go_tools
+  local repo; repo=$(go_min_one_repo)
+  add_file "$repo" c/c.go "$(go_six_ifs c)"
+  add_file "$repo" d/d.go "$(printf 'package d\n//line zz/gen.go:1\nfunc D( {\n')"
+  commit_all "$repo"
+  run_in "$repo" env XDG_CACHE_HOME="$(mktmp)" PATH="$(go_path_with golangci-lint)" "$SCRIPTS/lang/go.sh" c/c.go d/d.go
+  assert_exit 6
+  assert_contains "$ERR" "outside the requested packages"
+}

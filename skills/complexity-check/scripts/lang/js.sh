@@ -22,7 +22,7 @@ eslint_limits() {
       const api = require(path.resolve("node_modules/eslint"));
       const cwd = process.cwd();
       let C = api.loadESLint ? await api.loadESLint({ cwd }) : api.ESLint;
-      if (!api.loadESLint && ["js", "mjs", "cjs"].some((x) => fs.existsSync("eslint.config." + x))) {
+      if (!api.loadESLint && process.env.ESLINT_USE_FLAT_CONFIG !== "false" && fs.existsSync("eslint.config.js")) {
         try { C = require(path.resolve("node_modules/eslint/use-at-your-own-risk")).FlatESLint || C; } catch (e) {}
       }
       const eslint = new C({ cwd });
@@ -67,6 +67,7 @@ if [ -n "$(local_tool node_modules/.bin/eslint)" ]; then
       node_modules/.bin/eslint --format json -o "$tmp/out.json" "${group[@]}" >/dev/null 2> "$tmp/err"
       [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 6; }
       LIMIT=$limit SRC=$src node -e '
+        process.on("uncaughtException", () => process.exit(4));
         const fs = require("fs"), path = require("path");
         let bad = false;
         for (const f of JSON.parse(fs.readFileSync(process.argv[1], "utf8"))) {
@@ -126,6 +127,7 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
     node_modules/.bin/biome lint --reporter=json "$@" > "$tmp/out.json" 2> "$tmp/err"
     [ $? -ge 2 ] && { cat "$tmp/err" >&2; exit 6; }
     LIMIT=$limit SRC=$src node -e '
+      process.on("uncaughtException", () => process.exit(4));
       const fs = require("fs"), path = require("path");
       const raw = fs.readFileSync(process.argv[1], "utf8");
       const r = JSON.parse(raw.slice(raw.indexOf("{")));
@@ -151,10 +153,12 @@ if [ -n "$(local_tool node_modules/.bin/biome)" ]; then
     [ $unchecked -ne 0 ] && [ $unchecked -ne 3 ] && { echo "complexity: could not read Biome's report" >&2; exit 6; }
     [ $unchecked -eq 3 ] || unchecked=0
     processed=$(node -e '
+      process.on("uncaughtException", () => process.exit(4));
       const raw = require("fs").readFileSync(process.argv[1], "utf8");
       const s = JSON.parse(raw.slice(raw.indexOf("{"))).summary;
       console.log(s.changed + s.unchanged);
-    ' "$tmp/out.json")
+    ' "$tmp/out.json") || { echo "complexity: could not read Biome's report" >&2; exit 6; }
+    case $processed in ''|*[!0-9]*) echo "complexity: could not read Biome's report" >&2; exit 6 ;; esac
     if [ "$processed" -lt $# ]; then
       for f in "$@"; do
         node_modules/.bin/biome lint --reporter=json "$f" > "$tmp/one.json" 2>/dev/null
