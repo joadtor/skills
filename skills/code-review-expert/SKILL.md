@@ -74,7 +74,7 @@ Tech-agnostic — the same patterns repeat across languages:
 - **Performance** — N+1 queries, needless loops, heavy work in a hot path
 - **Tests** — is the new behavior covered? do the tests check behavior, not internals?
 - **Conventions** — does it match the project's stated rules and the surrounding patterns?
-- **Maintainability** — clear names, functions doing one thing (past cyclomatic complexity 8 they rarely do), no dead code
+- **Maintainability** — clear names, functions doing one thing (past the cognitive-complexity limit of 15 they rarely do — deep nesting is the usual cause: flag it with a suggested refactor and recommend running `/complexity-check` to measure; never run a complexity tool yourself), no dead code. When the caller says complexity is handled elsewhere (plan-execute's finish loop), skip complexity findings.
 
 ## Writing findings
 

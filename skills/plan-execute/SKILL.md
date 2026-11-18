@@ -1,6 +1,6 @@
 ---
 name: plan-execute
-description: Use when a plan-draft execution plan should be built — run its tasks, parallelizing independent ones across subagents, gating each on its DoD scenario plus tests, lint, and a complexity ceiling, committing per task, ending with one review.
+description: Use when a plan-draft execution plan should be built — run its tasks, parallelizing independent ones across subagents, gating each on its DoD scenario plus tests and lint, committing per task, ending with a review and complexity loop.
 ---
 
 # Plan Execute
@@ -9,7 +9,7 @@ description: Use when a plan-draft execution plan should be built — run its ta
 
 Build a settled `plan-draft` plan: read it, run its tasks — fanning independent ones out to parallel subagents — and gate every task on its Definition of Done (the scenario it turns green) plus a green test and lint run. The plan's `Depends on`/`Blocks` and per-task file lists are the execution graph; the linked `.feature` spec is the authority the plan argues from.
 
-**Core principle:** Maximise safe parallelism — one subagent per independent, disjoint-file task — gate each on tests + lint + complexity, commit per task, and never call a task done while anything is red.
+**Core principle:** Maximise safe parallelism — one subagent per independent, disjoint-file task — gate each on tests + lint, commit per task, and never call a task done while anything is red.
 
 ## Prerequisites
 
@@ -37,7 +37,6 @@ A task is done only when, with the run captured as evidence:
 - its **DoD scenario passes** — red before the task, green after;
 - the **tests** covering the change pass, and nothing else breaks;
 - **lint passes** if the project has one (detect the command: package scripts, Makefile, pre-commit, CI, or `CLAUDE.md`);
-- **complexity passes** — `scripts/complexity.sh` (bundled here) lists no changed function over 8, Uncle Bob's CRAP ceiling at full coverage; the project's own rule wins where it sets one. This is the refactor step's numeric exit, not an opinion. **Fail-safe:** a language whose tool the project lacks is *skipped*, with the unchecked files named — record that in the progress file and move on; never install tooling into a project to satisfy the gate;
 - **boundaries hold** — if the project runs a dependency checker (packwerk, dependency-cruiser, import-linter…) it passes, and nothing in the task crosses a boundary the plan's Context names (read the imports);
 - output is **pristine** — no errors, no warnings.
 
@@ -66,22 +65,31 @@ Rules the dispatch carries:
 
 ## Running the plan
 
+**Before the first wave, set up the complexity tools** — invoke `complexity-check setup`, passing the plan's task file paths (the languages come from their extensions). It's the run's one consent point: the user approves or declines missing tools once, in the main session, and every later check runs offline. Record declined languages in the progress file as unchecked.
+
+Complexity is never checked per task — only this setup and the finish loop measure it.
+
 Execute **continuously** — wave after wave, no pausing to ask "should I continue?". Decide small ambiguities yourself and log them.
 
-**Stop and ask only for:** a task at the 2-round cap; an irreversible or destructive operation; a push, publish, or merge to a shared branch; a plan so broken every path is a guess (plus the upfront no-plan and shared-branch gates).
+**Stop and ask only for:** a task at the 2-round cap; a function still over its complexity limit after the finish loop's 3 rounds; an irreversible or destructive operation; a push, publish, or merge to a shared branch; a plan so broken every path is a guess (plus the upfront no-plan and shared-branch gates).
 
 ### Progress file
 
-Keep a progress file at `.skills/plans/<plan-title>/progress.md`. On first use, ensure `.skills/` is ignored **globally** so it never lands in a repo — append it to the global gitignore (`git config --global core.excludesfile`; create and point one if it's unset). Its first line names the plan, so a resumed session matches it to this plan. Record, per **task and step**: status, the DoD/test/lint evidence, the commit hash, fix-round outcomes, decisions you made, and which tasks ran together in a wave. Mirror completion into the plan's own `[ ]`→`[x]` checkboxes. On resume: match the plan, skip what's done, continue — the progress file and `git log` outrank your memory after compaction.
+Keep a progress file at `.skills/plans/<plan-title>/progress.md`. On first use, ensure `.skills/` never lands in a repo — if `.skills/.gitignore` is missing, create it containing `*` (it ignores the whole folder, itself included; never touch the user's global gitignore). Its first line names the plan, so a resumed session matches it to this plan. Record, per **task and step**: status, the DoD/test/lint evidence, the commit hash, fix-round outcomes, decisions you made, and which tasks ran together in a wave. Mirror completion into the plan's own `[ ]`→`[x]` checkboxes. On resume: match the plan, skip what's done, continue — the progress file and `git log` outrank your memory after compaction.
 
 ## Finish
 
 When every task is done:
 
 1. **Prove the tests bite** — if the branch carries test-driven code, run `mutation-test` on it first; its ledger (kills, equivalents, spec gaps) goes into the review below.
-2. **One final whole-branch review** — `code-review-expert` for a small branch, or `pr-review`'s angle fan-out for a large one. Feed it the branch diff (`merge-base…HEAD`), the progress file's parked/deferred items, and the mutation ledger if there is one. **Stop at the report — never publish** (that's an outward action).
-3. **One bounded fix pass** on the final findings (not one fixer per finding), then stop.
-4. **Hand back a report:** what was built, the decisions you made, any parked findings, and the test + lint + complexity evidence. Then move the plan to `docs/plans/complete/`.
+2. **Review and complexity loop — at most 3 rounds.** Each round:
+   1. **Review** the whole branch — `code-review-expert` for a small branch, or `pr-review`'s angle fan-out for a large one. Feed it the branch diff (`merge-base…HEAD`), the progress file's parked/deferred items, and the mutation ledger if there is one, and tell it complexity is handled by this loop, so it skips complexity findings. **Stop at the report — never publish** (that's an outward action).
+   2. **Fix** its findings in one bounded pass (not one fixer per finding).
+   3. **Invoke `complexity-check check-only`** on the branch, and refactor any function it reports over its limit.
+   4. **Run the full tests** — green before the next round.
+
+   Commit each round's fixes and refactors as one commit. Stop early when a round leaves no findings and nothing over the limit. After round 3, review findings still open are parked in the report, and anything still over its limit goes to the user — a short report and a recommendation; the user decides.
+3. **Hand back a report:** what was built, the decisions you made, any parked findings, and the test + lint + complexity evidence. Then move the plan to `docs/plans/complete/`.
 
 Per-task commits already exist. **Do not** merge, push, or open a PR on your own — those are the user's call.
 
@@ -91,7 +99,7 @@ Per-task commits already exist. **Do not** merge, push, or open a PR on your own
 - Letting parallel agents commit → they race on the git index; the orchestrator commits per task.
 - Following the plan's phase order literally → build the dependency graph and regroup for parallelism.
 - Marking a task done with a red test or failing lint → fix it, or hit the cap and stop; never defer.
-- Shipping a function over the complexity gate "because it works" → refactor until `scripts/complexity.sh` is clean.
+- Shipping a function over its complexity limit "because it works" → the finish loop's `complexity-check` round refactors it.
 - Editing the `.feature` so a task passes → the spec is the authority; ask the user.
 - Handing an implementer the whole plan or your history → give it one task's brief; keep context lean.
 - A per-task reviewer subagent → the DoD scenario is the per-task check; review once at the end.

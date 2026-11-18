@@ -1,41 +1,43 @@
 ---
 name: context-pumping-loop
-description: Use when a plan or idea should be made better, not just clarified or stress-tested — you want a stronger design than the one on the table before building.
+description: Internal base interview engine loaded by context-pumping and context-pumping-spec — do not invoke directly; use one of those instead.
+user-invocable: false
 ---
 
 # Context Pumping Loop
 
 ## Overview
 
-Run the `context-pumping` interview, but don't just extract what the user already thinks — at each decision, also **innovate a better option**. Critique and generation feed each other in a loop until the design is genuinely better than the one you started with.
+Pump the context out of the user's head and onto the table. Interview them relentlessly about the plan or idea — one question at a time — until you both share a clear, complete understanding of what's being built and why.
 
-**Core principle:** Grill to expose the decision, brainstorm to improve it, tune the pick, advance. Loop until the design is solid — then stop and get approval.
-
-**REQUIRED BACKGROUND:** the `context-pumping` base engine — this skill is that interview with an innovation step added.
+**Core principle:** One question at a time. Walk the decision tree; resolve each decision before the one that depends on it.
 
 ## When to Use
 
-- The user wants the plan made *better*, not just pressure-tested
-- There is likely a stronger approach than the one on the table
+- A plan or design needs stress-testing before anyone writes code
+- A rough idea needs sharpening into something concrete
+- You're about to build and want the assumptions surfaced first
 
-## The Loop
+Works from either a rough idea or an existing plan. Not for trivial changes where the design is already obvious.
 
-For each decision, walking the tree in `context-pumping` order:
+## The Method
 
-1. **Grill** — one sharp question exposing an assumption, gap, or risk in the current plan.
-2. **Brainstorm — where there's room to improve.** Offer 2–3 *better* options with tradeoffs; lead with your recommendation. YAGNI: cut options and features that don't earn their place. If the current answer is already solid, record it and move on — don't manufacture alternatives.
-3. **Decide, then tune.** The user picks (or takes the rec). Then run a short follow-up Q&A to sharpen that choice before you leave it.
-4. **Advance** to the next decision. Repeat.
+1. **Explore first.** If a question can be answered by reading the code, docs, or history, answer it yourself — don't ask.
+2. **One question at a time.** Several questions at once is bewildering. Wait for the answer before asking the next.
+3. **Recommend an answer.** Every question carries your recommended answer and why — the user reacts to a proposal, they don't start from a blank page.
+4. **Walk the tree.** Order questions by dependency: resolve the decision others hinge on first, then move down its branches.
+5. **Stop at shared understanding.** When the tree is resolved and you could build it without guessing, you're done.
 
-The loop ends when the tree is resolved and the design is better than the one you started with.
+## Rules
 
-## The Gate
-
-When the design is settled, present it and **stop**. Do not write code, scaffold, or take any implementation action until the user approves. The gate is the approval, not the design's length — present, then wait for a yes.
+- One question per message. If a topic needs more, break it into several questions.
+- Prefer concrete options (A / B / C) over open-ended when you can.
+- Never batch questions to "save time" — it loses the user.
+- Explore the codebase instead of asking anything it can answer.
 
 ## Common Mistakes
 
-- Manufacturing alternatives for a decision that's already right → only brainstorm where there's room.
-- More options instead of better options → YAGNI; lead with a recommendation.
-- Picking an option and moving on without tuning it → run the sub-loop first.
-- Starting to build once the design "looks done" → the gate is the user's yes.
+- Several questions in one message → ask one, wait.
+- Asking what the code already answers → go read it.
+- A blank question with no recommendation → always lead with your pick.
+- Jumping to a design before the tree is resolved → keep pumping until it is.
