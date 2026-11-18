@@ -215,3 +215,13 @@ t_common_base_branch_order_is_develop_master_main() {
   _common "$r" base_branch
   assert_eq "$OUT" "develop" "develop beats master"
 }
+
+t_common_rust_test_modules_are_not_measured() {
+  local r; r="$(fixture)"
+  add_file "$r" src/util/tests.rs "x"
+  add_file "$r" src/util/test_support.rs "x"
+  add_file "$r" src/util/mod.rs "x"
+  commit_all "$r" "rust"
+  _common "$r" target_files
+  assert_eq "$OUT" "src/util/mod.rs"
+}

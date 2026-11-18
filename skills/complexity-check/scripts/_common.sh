@@ -27,7 +27,7 @@ base_branch() {
 }
 
 # Not production code: tests, fixtures, vendored or generated output, migrations, config and data files.
-SKIP_RE='^features/|(^|/)(spec|test|tests|__tests__|__mocks__|fixtures?|node_modules|vendor|dist|build|target|coverage|db/migrate)/|(_spec|_test|\.test|\.spec|\.stories|\.config|\.d)\.[a-z]+$|(^|/)(schema\.rb|conftest\.py|setup\.py)$|(^|/)test_[^/]*\.py$|\.(json|ya?ml|toml|lock|md|txt|csv|snap|min\.js)$'
+SKIP_RE='^features/|(^|/)(spec|test|tests|__tests__|__mocks__|fixtures?|node_modules|vendor|dist|build|target|coverage|db/migrate)/|(_spec|_test|\.test|\.spec|\.stories|\.config|\.d)\.[a-z]+$|(^|/)(schema\.rb|conftest\.py|setup\.py)$|(^|/)test_[^/]*\.py$|(^|/)(tests|test_support)\.rs$|\.(json|ya?ml|toml|lock|md|txt|csv|snap|min\.js)$'
 
 target_files() {
   local f a mb
