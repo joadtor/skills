@@ -48,7 +48,7 @@ The script is deliberately dumb. **You are the filter:**
 
 - **Skip** what can't change behaviour: log and print text, error-message wording, comments and docstrings, formatting, type-only lines.
 - **Add** what regex can't see when the diff warrants it: a method body replaced by its default return, swapped argument order, a loop bound off by one, a whole branch removed.
-- **Severity is the run order per line.** `high` (statement deleted, condition negated, return value dropped) → `mid` (operator or predicate flipped) → `low` (boundary nudged, literal changed). If the line's high mutant **survives**, skip its remaining candidates — the line has no real coverage and one survivor tells the story. If it's **killed**, still run the rest: boundary mutants are where off-by-one bugs hide behind a happy-path test.
+- **Severity is the run order per line.** `high` (statement deleted, condition negated, return value dropped) → `mid` (operator or predicate flipped) → `low` (boundary nudged, literal changed). If the line's high mutant **survives**, skip its remaining candidates — the line has no real coverage and one survivor tells the story. If it's **killed**, still run the rest: boundary mutants are where off-by-one bugs hide behind a happy-path test. The order matters only within a line; across lines any order is fine.
 - **No cap.** Every changed line with behaviour gets at least one mutant.
 - **Module size.** The finder warns when one file yields more than 50 candidates. A module that large is doing too much to harden in one sitting: report it and offer a split *before* mutating it. Don't split on your own.
 
@@ -63,10 +63,10 @@ Mutants are meant to break code, and broken code can turn a loop infinite or let
 Every mutant run then goes through the guard:
 
 ```bash
-timeout -k 10 <timeout>s nice -n 10 <related test command>   # macOS: gtimeout (brew install coreutils)
+timeout -k 10 <timeout>s nice -n 10 <related test command>   # no `timeout`? use gtimeout (brew install coreutils)
 ```
 
-On Linux, also run `ulimit -v <ceiling-in-KB>` inside the same subshell. macOS ignores `ulimit -v`, so there you check the run's memory with `ps -o rss= -p <pid>` while it runs and kill it if it passes the ceiling. Long runs go in the background so a stuck mutant doesn't block you.
+On Linux, also run `ulimit -v <ceiling-in-KB>` inside the same subshell. macOS ignores `ulimit -v`, so there you check the run's memory with `ps -o rss= -p <pid>` while it runs and kill it if it passes the ceiling — for runs of a few seconds the timeout alone is enough. Long runs go in the background so a stuck mutant doesn't block you.
 
 ## Step 3a — Interpreted languages (edit → run → revert)
 
@@ -88,11 +88,11 @@ Field notes:
 Rust, Go, Java/Kotlin, C#, Swift, C/C++. Rebuilding per mutant costs a build each; instead plant every mutant behind its own runtime switch, build once, and run once per switch — still exactly **one mutant live per run**. Field test (Rust, two crates): 13 mutants, 1 build (13 s), 13 runs, 0 recompiles.
 
 1. **Group into as few builds as possible.** One batch when one test command builds every unit (`cargo test -p config -p rdp-core --lib`, Go `./...`, a multi-module Gradle task) — a dependency's mutants then reach its dependents' tests too. Only when no single command covers them, batch per build unit (Cargo crate, Go package, Maven/Gradle module, .NET project), leaf-first, so one batch never forces another's rebuild.
-2. **Plant the schema.** Number the mutants in ledger order and rewrite each original line into a form that picks original or mutant by id (see "Compiled languages — rewrite shapes"). The switch is ONE environment variable with a project-unique name (`RDP_MUT=7`), read at runtime — never a build flag. Pre-filter candidates that can't compile first (statement deletion on the second line of a split `let`, `return Default::default()` in a fn returning `Result`, `while let None = x` dropping a binding the body uses): INVALID up front (field test: 5 of 21). **Plant with a script, not by hand:** a list of (file, exact original text, rewrite), asserting each original occurs exactly once in its file.
+2. **Plant the schema.** Number the mutants in ledger order and rewrite each original line into a form that picks original or mutant by id (see "Compiled languages — rewrite shapes"). The switch is ONE environment variable with a project-unique name (`RDP_MUT=7`), read at runtime — never a build flag. Pre-filter candidates that can't compile first (statement deletion on the second line of a split `let`, `return Default::default()` in a fn returning `Result`, `while let None = x` dropping a binding the body uses, `format!("", args)` whose arguments are left unused): INVALID up front (field test: 5 of 21). Skip, with a reason, a mutant identical to the original (`return None` → `Default::default()` when the type's default is `None`) and a semantic duplicate (negate-condition vs drop-negation, or eq-neq, on the same condition). **Plant with a script, not by hand:** a list of (file, exact original text, rewrite), asserting each original occurs exactly once in its file and each file's line count is unchanged — that keeps the ledger's line numbers valid.
 3. **Prove the schema inert.** Build, then run the related tests with no switch set: as green as before planting. Red means a rewrite changes behaviour when off — fix it before any mutant runs. Log the build command and duration.
 4. **Compile errors are per rewrite.** If the build fails, find the offending rewrite(s) (build after each file, or bisect by halves), mark each INVALID, restore its original line, rebuild. One bad rewrite never discards the batch.
-5. **Run once per switch,** in severity order, under the Step 2 guard, filtered to the related tests — libtest takes several filters after `--`: `RDP_MUT=7 cargo test -p config -p rdp-core --lib -- catalogue_sync applications::sync`. Loop it in one shell command printing `M<id> KILLED|SURVIVED compiles=<n> <failing tests>`; `compiles` (the count of `Compiling` lines) must be 0, and the failing test names are the ledger's evidence. A line whose high mutant survived skips its remaining switches.
-6. **Kills reuse the schema.** Keep it planted while writing the killing tests (Step 4): adding a test file costs one rebuild, then "green on the real code" is a run with no switch and "watch it fail" is `RDP_MUT=<id>` on the same build.
+5. **Run once per switch,** in severity order, under the Step 2 guard, filtered to the related tests — libtest takes several filters after `--`: `RDP_MUT=7 cargo test -p config -p rdp-core --lib -- catalogue_sync applications::sync`. Loop it in one shell command printing `M<id> KILLED|SURVIVED compiles=<n> <failing tests>`; `compiles` (the count of `Compiling` lines) must be 0, and the failing test names are the ledger's evidence — prefix them with their crate/package when several units share module names (`config::tests::ports`). A line whose high mutant survived skips its remaining switches.
+6. **Kills reuse the schema.** Keep it planted while writing the killing tests (Step 4): adding a test file costs one rebuild, then "green on the real code" is a run with no switch and "watch it fail" is `RDP_MUT=<id>` on the same build. If the kills must wait for the user (no spec), revert now and re-plant with the same script when the answers come.
 7. **Revert last:** `git checkout -- <every file in the schema>`, then `git diff --quiet` on them. Rebuild before the next batch if batches share artifacts.
 
 ## Step 4 — Resolve every survivor: three buckets, no fourth
@@ -101,13 +101,13 @@ Rust, Go, Java/Kotlin, C#, Swift, C/C++. Rebuilding per mutant costs a build eac
 - **Equivalent** — the change alters no observable behaviour (a dead branch, a boundary that can't occur, a value nothing reads). One-line reason in the ledger, no test.
 - **Spec gap** — real behaviour no scenario specifies. Don't invent the rule to kill it; the spec is the authority. Raise it to the user as a question.
 
-**No spec?** Finish the whole loop first. Then present every survivor as one list of proposed behaviours ("an order of exactly 100 still qualifies for the discount — yes?") and let the user confirm, correct, or reject in one pass. Confirmed → kill, in their wording. Rejected → equivalent. One conversation, not one per survivor.
+**No spec?** Finish the whole loop first. Mark the clear equivalents yourself, each with its reason (they need no answer). Then present every remaining survivor as one list of proposed behaviours ("an order of exactly 100 still qualifies for the discount — yes?") and let the user confirm, correct, or reject in one pass. Confirmed → kill, in their wording. Rejected → equivalent. One conversation, not one per survivor.
 
 **"Accepted — not worth a test" does not exist.** It's the excuse that hollows the exercise out.
 
 ## Compiled languages — rewrite shapes
 
-`m(n)` is shorthand for the inline check — in Rust `(std::env::var("RDP_MUT").as_deref() == Ok("7"))`. Plant it inline, not as a helper fn: a helper adds lines and shifts every line number the ledger points at.
+`m(n)` is shorthand for the inline check — in Rust `(std::env::var("RDP_MUT").as_deref() == Ok("7"))`. Plant it inline, not as a helper fn: a helper adds lines and shifts every line number the ledger points at. In condition position (`if m(n) {`) drop the outer parentheses, or rustc warns `unused_parens` on every switch — harmless, but noise.
 
 ```
 delete-call        call(x)?;                →  if !m(1) { call(x)?; }
@@ -122,6 +122,7 @@ empty-string       "text"                   →  (if m(9) { "" } else { "text" }
 false-true (arg)   f(a, false)              →  f(a, m(10))
 macro literal      warn!(e = %err, "text"); →  if m(11) { warn!(e = %err, ""); } else { warn!(e = %err, "text"); }
 two on one line    return (state, false);   →  if m(12) { return Default::default(); } return (state, m(13));
+several, one expr  if n > 10 {              →  if (if m(14) { n >= 10 } else if m(15) { n > 10 + 1 } else { n > 10 }) != m(16) {
 ```
 
 - Both arms have the same type; only the selected arm evaluates, so a value moved in one arm only is fine (`&if m(n) { error } else { error.without_url() }`).
@@ -156,7 +157,7 @@ batch pricing: `cargo test -p pricing --lib` · 2 mutants, 1 build (11 s), inert
 | 4 | crates/pricing/src/lib.rs:40 | negate-condition | pricing#1 | if (qty > 0) != m(1) | pricing::discount | KILLED | — |
 | 5 | crates/pricing/src/lib.rs:44 | some-none | pricing#2 | None | pricing::discount | KILLED | — |
 
-skipped: 1 log/markup text · 0 duplicate · 0 cannot compile · 0 test file
+skipped: 1 log/markup text · 0 duplicate · 0 identical to original · 0 cannot compile · 0 test file
 Score before kills: 3 / 4 = 75%
 ```
 
