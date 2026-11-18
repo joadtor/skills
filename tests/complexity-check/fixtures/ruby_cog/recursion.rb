@@ -19,3 +19,7 @@ end                           # 1
 def size(list)
   list.size + other.size(1)   # 0: same name on another receiver is not recursion
 end                           # 0
+
+def drain(q)
+  self.drain q.rest if q      # +1 (modifier if) +1 (recursion through self, command form)
+end                           # 2

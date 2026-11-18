@@ -35,7 +35,11 @@ t_ruby_boolean_sequences() {
 t_ruby_define_method_blocks_are_units() {
   assert_eq "$(cog define_method.rb)" "2${TAB}Widget#risky${TAB}3
 10${TAB}Widget.build${TAB}1
-14${TAB}Widget#plain${TAB}1"
+14${TAB}Widget#plain${TAB}1
+23${TAB}Widget#tally${TAB}1
+29${TAB}Widget#call${TAB}1
+34${TAB}Widget#wrap${TAB}0
+35${TAB}Widget#inner${TAB}1"
 }
 
 t_ruby_rescue_and_ternary_nested_in_blocks() {
@@ -58,7 +62,8 @@ t_ruby_recursion() {
 7${TAB}countdown${TAB}2
 11${TAB}walk${TAB}1
 15${TAB}poll${TAB}1
-19${TAB}size${TAB}0"
+19${TAB}size${TAB}0
+23${TAB}drain${TAB}2"
 }
 
 t_ruby_naming() {
@@ -70,6 +75,30 @@ t_ruby_naming() {
 27${TAB}Shop::Order#outer${TAB}1
 28${TAB}Shop::Order#inner${TAB}2
 37${TAB}Shop::Cart#items${TAB}1"
+}
+
+t_ruby_conditions_and_headers_are_scored() {
+  assert_eq "$(cog conditions.rb)" "2${TAB}if_condition${TAB}2
+8${TAB}elsif_condition${TAB}3
+16${TAB}case_subject${TAB}2
+22${TAB}for_collection${TAB}2
+28${TAB}for_target${TAB}2
+34${TAB}ternary_condition${TAB}2
+38${TAB}rescue_classes${TAB}2
+44${TAB}rescue_target${TAB}2
+50${TAB}rescue_mod_expr${TAB}2
+54${TAB}rescue_mod_value${TAB}3
+58${TAB}command_args${TAB}1
+62${TAB}comparisons${TAB}1
+66${TAB}statements_in_parens${TAB}2"
+}
+
+t_ruby_bodies_nest_inside_their_construct() {
+  assert_eq "$(cog nested_bodies.rb)" "2${TAB}case_in_if${TAB}3
+10${TAB}when_bodies${TAB}7
+21${TAB}ternary_in_ternary${TAB}3
+25${TAB}rescue_body${TAB}3
+31${TAB}else_body${TAB}4"
 }
 
 # ruby_repo <fixture-path:dest>...: a repo with the given fixtures copied in
